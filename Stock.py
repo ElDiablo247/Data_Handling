@@ -1,18 +1,42 @@
 from datetime import datetime
-import random
+import pandas as pd
 
 
 class Stock:
+    """
+    Description: Class that represents an asset in the stock market of type stock like nvidia or Apple etc.
+
+    Methods:
+        1.
+        2.
+        3.
+
+    """
+
     def __init__(self, company_name: str, sector: str):
+        """
+        Description: Constructor
+
+        Attributes:
+            1. ???? - Type: ???? - ?????????????
+            2. ???? - Type: ???? - ?????????????
+            3. ???? - Type: ???? - ?????????????
+            4. ???? - Type: ???? - ?????????????
+
+        Function calls:
+            1.
+            2.
+
+        """
         self.name = company_name
-        self.type = "Stock"
+        self.type = "stock"
         self.sector = sector
-        self.amount = 0
+        self.total_amount = 0
         self.positions = dict()
 
     def get_name(self):
         return self.name
-    
+
     def get_type(self):
         return self.type
 
@@ -20,7 +44,7 @@ class Stock:
         return self.sector
 
     def get_amount(self):
-        return self.amount
+        return self.total_amount
 
     def get_positions(self):
         for key, value in self.positions.items():
@@ -28,25 +52,36 @@ class Stock:
 
     def open_position(self, amount: int):
         if amount >= 0:
-            self.amount += amount
+            self.total_amount += amount
         self.store_position(amount)
 
     def store_position(self, amount: int):
-        datetime_str = datetime.now().strftime("Date: %Y-%m-%d Time: %H:%M:%S")
-        datetime_amount = [datetime_str, amount]
-        position_id = self.create_random_id()
-        self.positions[position_id] = datetime_amount
+        position_id = len(self.positions) + 1
+        current_datetime = datetime.now()
+        date_str = current_datetime.strftime("%d-%m-%Y")
+        time_str = current_datetime.strftime("%H:%M:%S")
+        self.positions[position_id] = [date_str, time_str, amount]
         print("Position opened and saved succesfully")
 
-    def close_position(self, position_id: int):
-        if position_id in self.positions:
-            del self.positions[position_id]
-            print(f"Position with number {position_id} was removed")
-        else:
-            raise KeyError("position_id not found in self.positions")
+    def sell_all_positions(self):
+        self.positions = dict()
+        print("Positions is now empty!")
 
-    def create_random_id(self):
-        while True:
-            random_id = random.randint(10000, 99999)
-            if random_id not in self.positions:
-                return random_id
+    def create_dataframe(self):
+        # Convert dictionary to DataFrame
+        df = pd.DataFrame.from_dict(self.positions, orient='index', columns=['Date', 'Time', 'Amount'])
+        df.index.name = 'ID'  # Setting the DataFrame index name as 'ID'
+        print(df)
+        return df
+
+
+nvidia = Stock("nvidia", "Tech")
+nvidia.open_position(200)
+nvidia.open_position(130)
+nvidia.open_position(150)
+nvidia.open_position(200)
+nvidia.open_position(130)
+nvidia.open_position(150)
+nvidia.get_positions()
+nvidia.create_dataframe()
+
