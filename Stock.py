@@ -1,5 +1,6 @@
 from datetime import datetime
 import pandas as pd
+import time
 
 
 class Stock:
@@ -29,7 +30,7 @@ class Stock:
 
         """
         self.name = company_name
-        self.type = "stock"
+        self.type = "Stock"
         self.sector = sector
         self.total_amount = 0
         self.positions = dict()
@@ -43,7 +44,7 @@ class Stock:
     def get_sector(self):
         return self.sector
 
-    def get_amount(self):
+    def get_total_amount(self):
         return self.total_amount
 
     def get_positions(self):
@@ -51,6 +52,7 @@ class Stock:
             print(key, value)
 
     def open_position(self, amount: int):
+        time.sleep(1)
         if amount >= 0:
             self.total_amount += amount
         self.store_position(amount)
@@ -71,17 +73,10 @@ class Stock:
         # Convert dictionary to DataFrame
         df = pd.DataFrame.from_dict(self.positions, orient='index', columns=['Date', 'Time', 'Amount'])
         df.index.name = 'ID'  # Setting the DataFrame index name as 'ID'
+        print("Stocks collection ")
         print(df)
         return df
 
 
-nvidia = Stock("nvidia", "Tech")
-nvidia.open_position(200)
-nvidia.open_position(130)
-nvidia.open_position(150)
-nvidia.open_position(200)
-nvidia.open_position(130)
-nvidia.open_position(150)
-nvidia.get_positions()
-nvidia.create_dataframe()
+
 

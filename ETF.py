@@ -1,52 +1,53 @@
 from datetime import datetime
-import random
+import pandas as pd
 
 
 class ETF:
-    def __init__(self, ETF_name: str, ETF_provider: str):
-        self.name = ETF_name
+    def __init__(self, etf_name: str, provider: str):
+        self.name = etf_name
         self.type = "ETF"
-        self.ETF_provider = ETF_provider
-        self.amount = 0
+        self.provider = provider
+        self.total_amount = 0
         self.positions = dict()
 
     def get_name(self):
         return self.name
-    
+
     def get_type(self):
         return self.type
-    
+
     def get_provider(self):
-        return self.ETF_provider
-    
-    def get_amount(self):
-        return self.amount
-    
+        return self.provider
+
+    def get_total_amount(self):
+        return self.total_amount
+
     def get_positions(self):
         for key, value in self.positions.items():
-            print(key,value)
+            print(key, value)
 
     def open_position(self, amount: int):
         if amount >= 0:
-            self.amount += amount
+            self.total_amount += amount
         self.store_position(amount)
 
     def store_position(self, amount: int):
-        datetime_str = datetime.now().strftime("Date: %Y-%m-%d Time: %H:%M:%S")
-        position_id = self.create_random_id()
-        datetime_amount = [datetime_str, amount]
-        self.positions[position_id] = datetime_amount
+        position_id = len(self.positions) + 1
+        current_datetime = datetime.now()
+        date_str = current_datetime.strftime("%d-%m-%Y")
+        time_str = current_datetime.strftime("%H:%M:%S")
+        self.positions[position_id] = [date_str, time_str, amount]
         print("Position opened and saved succesfully")
 
-    def close_position(self, position_id: int):
-        if position_id in self.positions:
-            del self.positions[position_id]
-        else:
-            raise KeyError("position_id not found in self.positions")
+    def sell_all_positions(self):
+        self.positions = dict()
+        print("Positions is now empty!")
 
-    def create_random_id(self):
-        while True:
-            random_id = random.randint(10000, 99999)
-            if random_id not in self.positions:
-                return random_id
-    
+    def create_dataframe(self):
+        # Convert dictionary to DataFrame
+        df = pd.DataFrame.from_dict(self.positions, orient='index', columns=['Date', 'Time', 'Amount'])
+        df.index.name = 'ID'  # Setting the DataFrame index name as 'ID'
+        print(df)
+        return df
+
+
