@@ -6,10 +6,27 @@ class DatabaseManipulation:
         self.admin_name = name
 
 
-    def execute_query(self, query, params=None, fetch=False):   
+    def execute_many(self, query, params, fetch=False):   
         conn, cursor = self.db_connection.connect()
         try:
-            cursor.execute(query, params)  # Use parameters with the query
+            cursor.executemany(query, params)  
+            if fetch:
+                return cursor.fetchall() 
+            conn.commit()  
+        except Exception as e:
+            conn.rollback()  
+            raise e  
+        finally:
+            cursor.close()
+            conn.close()
+
+    def execute_query(self, query, params=None, fetch=False):
+        conn, cursor = self.db_connection.connect()
+        try:
+            if params is not None:
+                cursor.execute(query, params)  # Use parameters with the query
+            else:
+                cursor.execute(query)  # Execute without parameters if none provided
             if fetch:
                 return cursor.fetchall()  # Return fetched results if requested
             conn.commit()  # Commit changes to the database
@@ -22,12 +39,3 @@ class DatabaseManipulation:
 
 db_conn = DatabaseConnection('assets_project_db', 'postgres', '6987129457', 'localhost')
 master = DatabaseManipulation(db_conn, "Raul")
-master.execute_query("""
-    CREATE TABLE IF NOT EXISTS assets (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    sector VARCHAR(255) NOT NULL,
-    total_amount INTEGER DEFAULT 0
-);
-""")
-
