@@ -78,16 +78,16 @@ class DatabaseManipulation:
             self.update_asset_amount_query(stock_name, amount, 'stock')
         else:
             new_entry = {'stock_name': stock_name, 'total_amount': amount, 'sector': stock_sector}
-            self.stocks_df = pd.concat([self.stocks_df, pd.DataFrame([new_entry])], ignore_index=True)
+            self.stocks_df = pd.concat([self.stocks_df, pd.DataFrame([new_entry])], ignore_index=True)     
             self.insert_new_asset_query(stock_name, amount, 'stock', stock_sector)
 
     def add_etf_position(self, etf_name: str, amount: int):
         if etf_name in self.etfs_df['etf_name'].values:
-            self.etfs_df.loc[self.etfs_df['etf_name'] == etf_name, 'total_amount'] += amount
+            self.etfs_df.loc[self.etfs_df['etf_name'] == etf_name, 'total_amount'] += amount           
             self.update_asset_amount_query(etf_name, amount, 'etf')
         else:
             new_entry = {'etf_name': etf_name, 'total_amount': amount}
-            self.etfs_df = pd.concat([self.etfs_df, pd.DataFrame([new_entry])], ignore_index=True)
+            self.etfs_df = pd.concat([self.etfs_df, pd.DataFrame([new_entry])], ignore_index=True)          
             self.insert_new_asset_query(etf_name, amount, 'etf')
 
     def add_crypto_position(self, crypto_name: str, amount: int):
@@ -98,6 +98,133 @@ class DatabaseManipulation:
             new_entry = {'crypto_name': crypto_name, 'total_amount': amount}
             self.crypto_df = pd.concat([self.crypto_df, pd.DataFrame([new_entry])], ignore_index=True)
             self.insert_new_asset_query(crypto_name, amount, 'crypto')
+
+    def update_asset_amount_query(self, asset_name: str, amount: int, asset_type: str):
+        if asset_type == 'stock':
+            query = """
+            UPDATE stocks 
+            SET total_amount = total_amount + :amount 
+            WHERE stock_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+            print('Stock total amount increased')
+        if asset_type == 'etf':
+            query = """
+            UPDATE etfs 
+            SET total_amount = total_amount + :amount 
+            WHERE etf_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+            print('ETF total amount increased')
+        if asset_type == 'crypto':
+            query = """
+            UPDATE crypto 
+            SET total_amount = total_amount + :amount 
+            WHERE crypto_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+            print('Crypto total amount increased')
+
+    def insert_new_asset_query(self, asset_name: str, amount: int, asset_type: str, sector=None):
+        if asset_type == 'stock':
+            query = """
+            INSERT INTO stocks(stock_name, total_amount, sector)
+            VALUES(:name, :amount, :sector);
+            """
+            params = {'name': asset_name, 'amount': amount, 'sector': sector}
+            self.execute_query(query, params)
+            print('New stock created')
+        if asset_type == 'etf':
+            query = """
+            INSERT INTO etfs(etf_name, total_amount)
+            VALUES(:name, :amount);
+            """
+            params = {'name': asset_name, 'amount': amount}
+            self.execute_query(query, params)
+            print('New ETF created')
+        if asset_type == 'crypto':
+            query = """
+            INSERT INTO crypto(crypto_name, total_amount)
+            VALUES(:name, :amount);
+            """
+            params = {'name': asset_name, 'amount': amount}
+            self.execute_query(query, params)
+            print('New crypto asset created')
+
+    def append_position_to_db_query(self, position_id: str, asset_name: str, amount: int, asset_type: str, sector: str):
+        query = """
+        INSERT INTO positions(position_id, position_name, position_amount, asset_type, sector)
+        VALUES(:id, :asset_name, :amount, :asset_type, :sector);
+        """
+        params = {'id': position_id, 'asset_name': asset_name, 'amount': amount, 'asset_type': asset_type, 'sector': sector}
+        self.execute_query(query, params)
+
+    def close_position(self, position_id: str):
+        if position_id in self.positions_df['position_id'].values:
+            position_row = self.positions_df[self.positions_df['position_id'] == position_id]
+            asset_name = position_row['position_name'].iloc[0]
+            amount = int(position_row['position_amount'].iloc[0])
+            asset_type = position_row['asset_type'].iloc[0]
+            if asset_type == 'stock':
+                self.stocks_df.loc[self.stocks_df['stock_name'] == asset_name, 'total_amount'] -= amount
+                self.decrease_asset_amount_query(asset_name, amount, asset_type)
+            if asset_type == 'etf':
+                self.stocks_df.loc[self.etfs_df['etf_name'] == asset_name, 'total_amount'] -= amount
+                self.decrease_asset_amount_query(asset_name, amount, asset_type)
+            if asset_type == 'crypto':
+                self.crypto_df.loc[self.crypto_df['crypto_name'] == asset_name, 'total_amount'] -= amount
+                self.decrease_asset_amount_query(asset_name, amount, asset_type)
+            self.delete_position_from_memory(position_id)
+        else:
+            raise KeyError('position_id does not exist.')
+            
+
+    def decrease_asset_amount_query(self, asset_name: str, amount: int, asset_type: str):
+        if asset_type == 'stock':
+            query = """
+            UPDATE stocks 
+            SET total_amount = total_amount - :amount 
+            WHERE stock_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+            print('Stock amount decreased')
+        if asset_type == 'etf':
+            query = """
+            UPDATE etfs 
+            SET total_amount = total_amount - :amount 
+            WHERE etf_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+            print('ETF amount decreased')
+        if asset_type == 'crypto':
+            query = """
+            UPDATE crypto 
+            SET total_amount = total_amount - :amount 
+            WHERE crypto_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+            print('Crypto amount decreased')
+
+    def delete_position_from_memory(self, position_id):
+        to_drop = self.positions_df[self.positions_df['position_id'] == position_id].index
+        self.positions_df.drop(to_drop, inplace=True)
+        self.delete_position_query(position_id)
+
+    def delete_position_query(self, position_id: str):
+        query = """
+        DELETE FROM positions
+        WHERE position_id = :pos_id;
+        """
+        params = {'pos_id': position_id}
+        self.execute_query(query, params)
+        print('Position with id ', position_id, ' was deleted.')
+
 
     def generate_unique_id(self):
         flag = False
@@ -137,71 +264,16 @@ class DatabaseManipulation:
             self.etfs_df = pd.read_sql_table('etfs', connection)
             self.crypto_df = pd.read_sql_table('crypto', connection)
             self.positions_df = pd.read_sql_table('positions', connection)
-            self.show_tables_db()
             self.unique_codes = set(self.positions_df['position_id'])
-
+            self.show_tables_db()
+            
     def upload_tables_to_db(self):
         self.stocks_df.to_sql('stocks', con=self.engine, if_exists='replace', index=False)
         self.etfs_df.to_sql('etfs', con=self.engine, if_exists='replace', index=False)
         self.crypto_df.to_sql('crypto', con=self.engine, if_exists='replace', index=False)
         self.positions_df.to_sql('positions', con=self.engine, if_exists='replace', index=False)
 
-    def update_asset_amount_query(self, asset_name: str, amount: int, asset_type: str):
-        if asset_type == 'stock':
-            query = """
-            UPDATE stocks 
-            SET total_amount = total_amount + :amount 
-            WHERE stock_name = :name;
-            """
-            params = {'amount': amount, 'name': asset_name}
-            self.execute_query(query, params)
-        if asset_type == 'etf':
-            query = """
-            UPDATE etfs 
-            SET total_amount = total_amount + :amount 
-            WHERE etf_name = :name;
-            """
-            params = {'amount': amount, 'name': asset_name}
-            self.execute_query(query, params)
-        if asset_type == 'crypto':
-            query = """
-            UPDATE crypto 
-            SET total_amount = total_amount + :amount 
-            WHERE crypto_name = :name;
-            """
-            params = {'amount': amount, 'name': asset_name}
-            self.execute_query(query, params)
-
-    def insert_new_asset_query(self, asset_name: str, amount: int, asset_type: str, sector=None):
-        if asset_type == 'stock':
-            query = """
-            INSERT INTO stocks(stock_name, total_amount, sector)
-            VALUES(:name, :amount, :sector);
-            """
-            params = {'name': asset_name, 'amount': amount, 'sector': sector}
-            self.execute_query(query, params)
-        if asset_type == 'etf':
-            query = """
-            INSERT INTO etfs(etf_name, total_amount)
-            VALUES(:name, :amount);
-            """
-            params = {'name': asset_name, 'amount': amount}
-            self.execute_query(query, params)
-        if asset_type == 'crypto':
-            query = """
-            INSERT INTO crypto(crypto_name, total_amount)
-            VALUES(:name, :amount);
-            """
-            params = {'name': asset_name, 'amount': amount}
-            self.execute_query(query, params)
-
-    def append_position_to_db_query(self, position_id: str, asset_name: str, amount: int, asset_type: str, sector: str):
-        query = """
-        INSERT INTO positions(position_id, position_name, position_amount, asset_type, sector)
-        VALUES(:id, :asset_name, :amount, :asset_type, :sector);
-        """
-        params = {'id': position_id, 'asset_name': asset_name, 'amount': amount, 'asset_type': asset_type, 'sector': sector}
-        self.execute_query(query, params)
+    
 
     
 master = DatabaseManipulation()
