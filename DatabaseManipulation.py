@@ -54,21 +54,11 @@ class DatabaseManipulation:
         for query in queries:
             self.execute_query(query)
 
-    def sql_to_df(self):
-        
-        with self.engine.connect() as connection:
-            self.stocks_df = pd.read_sql_table('stocks', connection)
-            self.etfs_df = pd.read_sql_table('etfs', connection)
-            self.crypto_df = pd.read_sql_table('crypto', connection)
-            self.positions_df = pd.read_sql_table('positions', connection)
-            self.show_tables()
-            self.unique_codes = set(self.positions_df['position_id'])
-
     def open_position(self, asset_name: str, amount: int, asset_type: str):
         sector = None
         if asset_type.lower() == 'stock':
-            sector = input("This position is for a stock so a sector must be entered(Technology, Finance etc.): ")
-            self.add_stock_position(asset_name, amount, sector)
+            sector = input("This position is for a stock so a sector must be entered(Technology, Finance etc.): ").upper()
+            self.add_stock_position(asset_name, amount, sector)           
         
         if asset_type.lower() == 'etf':
             self.add_etf_position(asset_name, amount)
@@ -80,30 +70,34 @@ class DatabaseManipulation:
         unique_id = self.generate_unique_id()
         new_entry = {'position_id': unique_id, 'position_name': asset_name, 'position_amount': amount, 'asset_type': asset_type, 'sector': sector}
         self.positions_df = pd.concat([self.positions_df, pd.DataFrame([new_entry])], ignore_index=True)
-        
+        self.append_position_to_db_query(unique_id, asset_name, amount, asset_type, sector)
+
     def add_stock_position(self, stock_name: str, amount: int, stock_sector: str):     
         if stock_name in self.stocks_df['stock_name'].values:
             self.stocks_df.loc[self.stocks_df['stock_name'] == stock_name, 'total_amount'] += amount
+            self.update_asset_amount_query(stock_name, amount, 'stock')
         else:
             new_entry = {'stock_name': stock_name, 'total_amount': amount, 'sector': stock_sector}
             self.stocks_df = pd.concat([self.stocks_df, pd.DataFrame([new_entry])], ignore_index=True)
+            self.insert_new_asset_query(stock_name, amount, 'stock', stock_sector)
 
     def add_etf_position(self, etf_name: str, amount: int):
         if etf_name in self.etfs_df['etf_name'].values:
             self.etfs_df.loc[self.etfs_df['etf_name'] == etf_name, 'total_amount'] += amount
+            self.update_asset_amount_query(etf_name, amount, 'etf')
         else:
             new_entry = {'etf_name': etf_name, 'total_amount': amount}
             self.etfs_df = pd.concat([self.etfs_df, pd.DataFrame([new_entry])], ignore_index=True)
-
+            self.insert_new_asset_query(etf_name, amount, 'etf')
 
     def add_crypto_position(self, crypto_name: str, amount: int):
         if crypto_name in self.crypto_df['crypto_name'].values:
             self.crypto_df.loc[self.crypto_df['crypto_name'] == crypto_name, 'total_amount'] += amount
+            self.update_asset_amount_query(crypto_name, amount, 'crypto')
         else:
             new_entry = {'crypto_name': crypto_name, 'total_amount': amount}
             self.crypto_df = pd.concat([self.crypto_df, pd.DataFrame([new_entry])], ignore_index=True)
-
-        
+            self.insert_new_asset_query(crypto_name, amount, 'crypto')
 
     def generate_unique_id(self):
         flag = False
@@ -116,11 +110,35 @@ class DatabaseManipulation:
                 flag = True
                 return unique_id
     
-    def show_tables(self):
-        print(self.stocks_df)
-        print(self.etfs_df)
-        print(self.crypto_df)
-        print(self.positions_df)
+    def show_tables_db(self):
+        stocks_result = self.execute_query("""SELECT * FROM stocks""", fetch=True)
+        print("Stocks")
+        for entry in stocks_result:
+            print(entry)
+        print()
+        etfs_result = self.execute_query("""SELECT * FROM etfs""", fetch=True)
+        print("ETFs")
+        for entry in etfs_result:
+            print(entry)
+        print()
+        crypto_results = self.execute_query("""SELECT * FROM crypto""", fetch=True)
+        print("Crypto")
+        for entry in crypto_results:
+            print(entry)
+        print()
+        positions_results = self.execute_query("""SELECT * FROM positions""", fetch=True)
+        print("Positions")
+        for entry in positions_results:
+            print(entry)
+
+    def sql_to_df(self):
+        with self.engine.connect() as connection:
+            self.stocks_df = pd.read_sql_table('stocks', connection)
+            self.etfs_df = pd.read_sql_table('etfs', connection)
+            self.crypto_df = pd.read_sql_table('crypto', connection)
+            self.positions_df = pd.read_sql_table('positions', connection)
+            self.show_tables_db()
+            self.unique_codes = set(self.positions_df['position_id'])
 
     def upload_tables_to_db(self):
         self.stocks_df.to_sql('stocks', con=self.engine, if_exists='replace', index=False)
@@ -128,5 +146,62 @@ class DatabaseManipulation:
         self.crypto_df.to_sql('crypto', con=self.engine, if_exists='replace', index=False)
         self.positions_df.to_sql('positions', con=self.engine, if_exists='replace', index=False)
 
-            
+    def update_asset_amount_query(self, asset_name: str, amount: int, asset_type: str):
+        if asset_type == 'stock':
+            query = """
+            UPDATE stocks 
+            SET total_amount = total_amount + :amount 
+            WHERE stock_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+        if asset_type == 'etf':
+            query = """
+            UPDATE etfs 
+            SET total_amount = total_amount + :amount 
+            WHERE etf_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+        if asset_type == 'crypto':
+            query = """
+            UPDATE crypto 
+            SET total_amount = total_amount + :amount 
+            WHERE crypto_name = :name;
+            """
+            params = {'amount': amount, 'name': asset_name}
+            self.execute_query(query, params)
+
+    def insert_new_asset_query(self, asset_name: str, amount: int, asset_type: str, sector=None):
+        if asset_type == 'stock':
+            query = """
+            INSERT INTO stocks(stock_name, total_amount, sector)
+            VALUES(:name, :amount, :sector);
+            """
+            params = {'name': asset_name, 'amount': amount, 'sector': sector}
+            self.execute_query(query, params)
+        if asset_type == 'etf':
+            query = """
+            INSERT INTO etfs(etf_name, total_amount)
+            VALUES(:name, :amount);
+            """
+            params = {'name': asset_name, 'amount': amount}
+            self.execute_query(query, params)
+        if asset_type == 'crypto':
+            query = """
+            INSERT INTO crypto(crypto_name, total_amount)
+            VALUES(:name, :amount);
+            """
+            params = {'name': asset_name, 'amount': amount}
+            self.execute_query(query, params)
+
+    def append_position_to_db_query(self, position_id: str, asset_name: str, amount: int, asset_type: str, sector: str):
+        query = """
+        INSERT INTO positions(position_id, position_name, position_amount, asset_type, sector)
+        VALUES(:id, :asset_name, :amount, :asset_type, :sector);
+        """
+        params = {'id': position_id, 'asset_name': asset_name, 'amount': amount, 'asset_type': asset_type, 'sector': sector}
+        self.execute_query(query, params)
+
+    
 master = DatabaseManipulation()
