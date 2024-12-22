@@ -299,4 +299,41 @@ class DatabaseManipulation:
         total_assets_df = pd.DataFrame(data)
         print(total_assets_df)
     
+
+class DataAnalysis:
+    def __init__(self, object: DatabaseManipulation):
+        self.positions_df = object.positions_df
+        self.total_amount_stocks = 0
+        self.total_amount_etfs = 0
+        self.total_amount_crypto = 0
+        self.total_amount_all_assets = 0
+        self.total_count_stocks = 0
+        self.total_count_etfs = 0
+        self.total_count_crypto = 0
+        self.total_count_all_assets = 0
+        self.set_total_amounts_counts()
+
+    def set_total_amounts_counts(self):
+        stocks = self.positions_df[self.positions_df['asset_type'] == 'stock']
+        print(stocks)
+        etfs = self.positions_df[self.positions_df['asset_type'] == 'etf']
+        crypto = self.positions_df[self.positions_df['asset_type'] == 'crypto']
+        self.total_amount_stocks = stocks['position_amount'].sum()
+        self.total_amount_etfs = etfs['position_amount'].sum()
+        self.total_amount_crypto = crypto['position_amount'].sum()
+        self.total_amount_all_assets = self.positions_df['position_amount'].sum()
+        self.total_count_stocks = stocks['position_name'].nunique()
+        self.total_count_etfs = etfs['position_name'].nunique()
+        self.total_count_crypto = crypto['position_name'].nunique()
+        self.total_count_all_assets = self.positions_df['position_name'].nunique()
+        self.show_totals()
+    
+    def show_totals(self):
+        print()
+        print('Stocks total amount invested is ', self.total_amount_stocks, ' and total stocks in portofolio are ', self.total_count_stocks)
+        print('ETFs total amount invested is ', self.total_amount_etfs, ' and total etfs in portofolio are ', self.total_count_etfs)
+        print('Crypto total amount invested is ', self.total_amount_crypto, ' and total cryptos in portofolio are ', self.total_count_crypto)
+        print(self.total_amount_all_assets, self.total_count_all_assets)
+
 master = DatabaseManipulation()
+analysis = DataAnalysis(master)
