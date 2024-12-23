@@ -125,27 +125,6 @@ class DatabaseManipulation:
                 flag = True
                 return unique_id
     
-    def show_tables_db(self):
-        stocks_result = self.execute_query("""SELECT * FROM stocks""", fetch=True)
-        print("Stocks")
-        for entry in stocks_result:
-            print(entry)
-        print()
-        etfs_result = self.execute_query("""SELECT * FROM etfs""", fetch=True)
-        print("ETFs")
-        for entry in etfs_result:
-            print(entry)
-        print()
-        crypto_results = self.execute_query("""SELECT * FROM crypto""", fetch=True)
-        print("Crypto")
-        for entry in crypto_results:
-            print(entry)
-        print()
-        positions_results = self.execute_query("""SELECT * FROM positions""", fetch=True)
-        print("Positions")
-        for entry in positions_results:
-            print(entry)
-
     def load_data_from_db_to_memory(self):
         with self.engine.connect() as connection:
             self.stocks_df = pd.read_sql_table('stocks', connection)
@@ -153,8 +132,24 @@ class DatabaseManipulation:
             self.crypto_df = pd.read_sql_table('crypto', connection)
             self.positions_df = pd.read_sql_table('positions', connection)
             self.unique_codes = set(self.positions_df['position_id'])
-            self.show_tables_db()
-            
+            self.show_all_assets_in_memory()
+
+    def show_all_assets_in_memory(self):
+        print("Stocks")
+        print(self.stocks_df)
+        print()
+        
+        print("ETFs")
+        print(self.etfs_df)
+        print()
+        
+        print("Crypto")
+        print(self.crypto_df)
+        print()
+        
+        print("Positions")
+        print(self.positions_df)
+
     def upload_tables_to_db(self):
         self.stocks_df.to_sql('stocks', con=self.engine, if_exists='replace', index=False)
         self.etfs_df.to_sql('etfs', con=self.engine, if_exists='replace', index=False)
@@ -298,42 +293,3 @@ class DatabaseManipulation:
         data = {'stocks_total': [stocks_total], 'etfs_total': [etfs_total], 'crypto_total': [crypto_total], 'grand_total': [grand_total]}
         total_assets_df = pd.DataFrame(data)
         print(total_assets_df)
-    
-
-class DataAnalysis:
-    def __init__(self, object: DatabaseManipulation):
-        self.positions_df = object.positions_df
-        self.total_amount_stocks = 0
-        self.total_amount_etfs = 0
-        self.total_amount_crypto = 0
-        self.total_amount_all_assets = 0
-        self.total_count_stocks = 0
-        self.total_count_etfs = 0
-        self.total_count_crypto = 0
-        self.total_count_all_assets = 0
-        self.set_total_amounts_counts()
-
-    def set_total_amounts_counts(self):
-        stocks = self.positions_df[self.positions_df['asset_type'] == 'stock']
-        print(stocks)
-        etfs = self.positions_df[self.positions_df['asset_type'] == 'etf']
-        crypto = self.positions_df[self.positions_df['asset_type'] == 'crypto']
-        self.total_amount_stocks = stocks['position_amount'].sum()
-        self.total_amount_etfs = etfs['position_amount'].sum()
-        self.total_amount_crypto = crypto['position_amount'].sum()
-        self.total_amount_all_assets = self.positions_df['position_amount'].sum()
-        self.total_count_stocks = stocks['position_name'].nunique()
-        self.total_count_etfs = etfs['position_name'].nunique()
-        self.total_count_crypto = crypto['position_name'].nunique()
-        self.total_count_all_assets = self.positions_df['position_name'].nunique()
-        self.show_totals()
-    
-    def show_totals(self):
-        print()
-        print('Stocks total amount invested is ', self.total_amount_stocks, ' and total stocks in portofolio are ', self.total_count_stocks)
-        print('ETFs total amount invested is ', self.total_amount_etfs, ' and total etfs in portofolio are ', self.total_count_etfs)
-        print('Crypto total amount invested is ', self.total_amount_crypto, ' and total cryptos in portofolio are ', self.total_count_crypto)
-        print(self.total_amount_all_assets, self.total_count_all_assets)
-
-master = DatabaseManipulation()
-analysis = DataAnalysis(master)
