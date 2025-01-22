@@ -138,43 +138,88 @@ class DatabaseManipulation:
 
         """
         if position_id in self.positions_df['position_id'].values:
-            self.delete_position_from_memory(position_id)
-
             position_row = self.positions_df[self.positions_df['position_id'] == position_id]
             asset_name = position_row['position_name'].iloc[0]
             amount = int(position_row['position_amount'].iloc[0])
             asset_type = position_row['asset_type'].iloc[0]
             if asset_type == 'stock':
-                self.remove_stock_memory(asset_name, amount)
+                self.decrease_stock_amount_memory(asset_name, amount)
             if asset_type == 'etf':
-                self.remove_etf_memory(asset_name, amount)
+                self.decrease_etf_amount_memory(asset_name, amount)
             if asset_type == 'crypto':
-                self.remove_crypto_memory(asset_name, amount)  
+                self.decrease_crypto_amount_memory(asset_name, amount)  
+
+            self.delete_position_from_memory(position_id)
         else:
             raise KeyError('position_id does not exist.')
 
-    def remove_stock_memory(self, stock_name: str, amount: int):
+    def decrease_stock_amount_memory(self, stock_name: str, amount: int):
+        """This function is called from close_position function if the position exists, and should not be directly called by the user because of data integrity. This function subtracts the position amount from the stock asset (self.stocks) and if it reaches 0 then completely deletes the asset.
+
+        Args:
+            stock_name (str): The name of the stock of type string ("Apple")
+            amount (int): The amount of the stock position at time of purchase
+
+        Raises:
+            KeyError: Stock name does not exist.
+        """
         if stock_name in self.stocks_df['stock_name'].values:
-            self.stocks_df.loc[self.stocks_df['stock_name'] == stock_name, 'total_amount'] -= amount
+            self.stocks_df.loc[self.stocks_df['stock_name'] == stock_name, 'total_amount'] -= amount          
             self.decrease_asset_amount_db(stock_name, amount, 'stock')
+
+            new_amount = self.stocks_df.loc[self.stocks_df['stock_name'] == stock_name, 'total_amount'].values[0]
+            if new_amount == 0:
+                self.stocks_df.drop(self.stocks_df[self.stocks_df['stock_name'] == stock_name].index, inplace=True)
         else:
             raise KeyError('Stock name ', stock_name, ' does not exist.')
 
-    def remove_etf_memory(self, etf_name: str, amount: int):
+    def decrease_etf_amount_memory(self, etf_name: str, amount: int):
+        """This function is called from close_position function if the position exists, and should not be directly called by the user because of data integrity. This function subtracts the position amount from the ETF asset (self.etfs) and if it reaches 0 then completely deletes the asset.
+
+        Args:
+            etf_name (str): The name of the ETF of type string ("VOO")
+            amount (int): The amount of the ETF position at time of purchase
+
+        Raises:
+            KeyError: ETF name does not exist
+        """
         if etf_name in self.etfs_df['etf_name'].values:
             self.etfs_df.loc[self.etfs_df['etf_name'] == etf_name, 'total_amount'] -= amount
             self.decrease_asset_amount_db(etf_name, amount, 'etf')
+
+            new_amount = self.etfs_df.loc[self.etfs_df['etf_name'] == etf_name, 'total_amount'].values[0]
+            if new_amount == 0:
+                self.etfs_df.drop(self.etfs_df[self.etfs_df['etf_name'] == etf_name].index, inplace=True)
         else:
             raise KeyError('ETF name ', etf_name, ' does not exist.')
 
-    def remove_crypto_memory(self, crypto_name: str, amount: int):
+    def decrease_crypto_amount_memory(self, crypto_name: str, amount: int):
+        """This function is called from close_position function if the position exists, and should not be directly called by the user because of data integrity. This function subtracts the position amount from the crypto asset (self.crypto) and if it reaches 0 then completely deletes the asset.
+
+        Args:
+            crypto_name (str): The name of the crypto of type string ("Bitcoin")
+            amount (int): The amount of the crypto position at time of purchase
+
+        Raises:
+            KeyError: Crypto name does not exist
+        """
         if crypto_name in self.crypto_df['crypto_name'].values:
             self.crypto_df.loc[self.crypto_df['crypto_name'] == crypto_name, 'total_amount'] -= amount
             self.decrease_asset_amount_db(crypto_name, amount, 'crypto')
+
+            new_amount = self.crypto_df.loc[self.crypto_df['crypto_name'] == crypto_name, 'total_amount'].values[0]
+            if new_amount == 0:
+                self.crypto_df.drop(self.crypto_df[self.crypto_df['crypto_name'] == crypto_name].index, inplace=True)
         else:
             raise KeyError('Crypto name ', crypto_name, ' does not exist.')
     
-    def delete_position_from_memory(self, position_id):
+    def delete_position_from_memory(self, position_id: str):
+        """Function that deletes a position from memory (self.positions) by using the position_id string parameter to search for it. Here we do not have to implement any error checking because it has
+        already been checked that the position exists, so coming so far means that the position exist in self.positions or else an error would have been raised sooner.
+
+        Args:
+            position_id (str): The string position_id to look for ("J444")
+        """
         to_drop = self.positions_df[self.positions_df['position_id'] == position_id].index
         self.positions_df.drop(to_drop, inplace=True)
         self.delete_position_db(position_id)
@@ -358,3 +403,7 @@ class DatabaseManipulation:
         data = {'stocks_total': [stocks_total], 'etfs_total': [etfs_total], 'crypto_total': [crypto_total], 'grand_total': [grand_total]}
         total_assets_df = pd.DataFrame(data)
         print(total_assets_df)
+
+
+master = DatabaseManipulation()
+master.show_total_invested()

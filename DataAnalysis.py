@@ -60,7 +60,5 @@ class DataAnalysis:
 
 
 
-master = DatabaseManipulation()
-data_analysis = DataAnalysis(master)
-data_analysis.show_data_chart()
+
 
