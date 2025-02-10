@@ -4,7 +4,7 @@ import random
 import string
 
 
-class DatabaseManipulation:
+class Portofolio:
     def __init__(self):
         # Initialize SQLAlchemy engine
         self.engine = create_engine('postgresql+psycopg2://postgres:6987129457@localhost/assets_project_db')
@@ -450,9 +450,35 @@ class DatabaseManipulation:
         self.create_empty()
         print("All tables in memory and database have been reset")
 
+    def compare_tables_equality(self, asset_table: str):
+        memory_table_df = getattr(self, f"{asset_table}_df", None) # table to be compared is set dynamically depending on user input
+        if memory_table_df is None:
+            print("Not a valid table name")
+            return False
+        
+        # SQL table equivalent with the one in memory is fetched and converted to a dataframe
+        query = f"SELECT * FROM {asset_table};"
+        sql_table = self.execute_query(query, fetch=True)
+        sql_table_df = pd.DataFrame(sql_table, columns=memory_table_df.columns)
+        if memory_table_df.empty and sql_table_df.empty:
+            print("Both in-memory and SQL database tables are empty.")
+            return True
+        # below we sort both memory and SQL tables to have the same order
+        sorted_memory_df = memory_table_df.sort_values(by=memory_table_df.columns.tolist()).reset_index(drop=True)
+        sorted_sql_df = sql_table_df.sort_values(by=sql_table_df.columns.tolist()).reset_index(drop=True)
+
+        # here we compare to see if they are equal and contain the same entries
+        if sorted_memory_df.equals(sorted_sql_df):
+            print("Both tables match.")
+            return True
+        else:
+            print("Tables have mismatches")
+            return False
+                
 
 
-master = DatabaseManipulation()
+
+master = Portofolio()
 master.show_total_invested()
 
 """
