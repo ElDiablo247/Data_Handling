@@ -5,9 +5,11 @@ import string
 
 
 class Portofolio:
-    def __init__(self):
+    def __init__(self, username: str):
         # Initialize SQLAlchemy engine
         self.engine = create_engine('postgresql+psycopg2://postgres:6987129457@localhost/assets_project_db')
+        self.user = ""
+        self.set_username(username)
         self.create_empty()
         self.stocks_df = pd.DataFrame()
         self.etfs_df = pd.DataFrame()
@@ -15,6 +17,21 @@ class Portofolio:
         self.positions_df = pd.DataFrame()
         self.unique_codes = set()
         self.load_data_from_db_to_memory()
+        self.account_amount = 0
+
+    def add_money(self, amount: int):
+        self.account_amount += amount
+
+    def get_account_amount(self) -> int:
+        return self.account_amount
+
+    def set_username(self, username: str):
+        if not isinstance(username, str):
+            raise ValueError("Name must be a string")
+        self.user = username
+
+    def get_username(self) -> str:
+        return self.user
 
     def execute_query(self, query: str, params=None, fetch=False):
         """ Function that is called to execute an SQL query. It takes a string parameter which is a valid SQL query, and also a list of parameters if any. FOR EXAMPLE
@@ -69,24 +86,27 @@ class Portofolio:
             amount (int): Amount of position
             asset_type (str): Type of the asset (stock, ETF or crypto)
         """
-        sector = asset_sector
-        if sector == None:
-            sector = "-"
-        if asset_type.lower() == 'stock':
-            if sector == "-":
-                sector = input("This position is for a stock so a sector must be entered(Technology, Finance etc.): ").upper()  
-                self.add_stock_memory(asset_name, amount, sector)  
-            else:
-                self.add_stock_memory(asset_name, amount, sector)             
-        if asset_type.lower() == 'etf':
-            self.add_etf_memory(asset_name, amount)
-        if asset_type.lower() == 'crypto':
-            self.add_crypto_memory(asset_name, amount)
-        #a unique id is generated to represent each new position
-        unique_id = self.generate_unique_id()
-        new_entry = {'position_id': unique_id, 'position_name': asset_name, 'position_amount': amount, 'asset_type': asset_type, 'sector': sector}
-        self.positions_df = pd.concat([self.positions_df, pd.DataFrame([new_entry])], ignore_index=True)
-        self.append_position_to_db(unique_id, asset_name, amount, asset_type, sector)
+        if amount < self.account_amount:
+            sector = asset_sector
+            if sector == None:
+                sector = "-"
+            if asset_type.lower() == 'stock':
+                if sector == "-":
+                    sector = input("This position is for a stock so a sector must be entered(Technology, Finance etc.): ").upper()  
+                    self.add_stock_memory(asset_name, amount, sector)  
+                else:
+                    self.add_stock_memory(asset_name, amount, sector)             
+            if asset_type.lower() == 'etf':
+                self.add_etf_memory(asset_name, amount)
+            if asset_type.lower() == 'crypto':
+                self.add_crypto_memory(asset_name, amount)
+            #a unique id is generated to represent each new position
+            unique_id = self.generate_unique_id()
+            new_entry = {'position_id': unique_id, 'position_name': asset_name, 'position_amount': amount, 'asset_type': asset_type, 'sector': sector}
+            self.positions_df = pd.concat([self.positions_df, pd.DataFrame([new_entry])], ignore_index=True)
+            self.append_position_to_db(unique_id, asset_name, amount, asset_type, sector)
+        else:
+            raise ValueError("Your account has ")
 
     def add_stock_memory(self, stock_name: str, amount: int, stock_sector: str):
         """ Function that adds a stock asset to memory dataframe. If the stock already exists in the `stocks_df` DataFrame, its `total_amount` is increased by the specified `amount`, and the change is reflected in the SQL database. If the stock does not exist, a new entry is created and added to both the in-memory DataFrame and the database.
@@ -478,7 +498,7 @@ class Portofolio:
 
 
 
-master = Portofolio()
+master = Portofolio("Raul")
 master.show_total_invested()
 
 """
