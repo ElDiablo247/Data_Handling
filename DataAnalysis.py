@@ -1,11 +1,11 @@
-from Portofolio import DatabaseManipulation
+from Portofolio import Portofolio
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 
 class DataAnalysis:
-    def __init__(self, object: DatabaseManipulation):
+    def __init__(self, object: Portofolio):
         self.positions_df = object.positions_df
         self.data_analysis_df = self.create_assets_data_df()
         self.create_assets_data_df()
