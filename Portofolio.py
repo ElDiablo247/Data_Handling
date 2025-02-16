@@ -2,13 +2,14 @@ from sqlalchemy import create_engine, text
 import pandas as pd
 import random
 import string
+import re
 
 
 class Portofolio:
     def __init__(self, username: str):
         # Initialize SQLAlchemy engine
         self.engine = create_engine('postgresql+psycopg2://postgres:6987129457@localhost/assets_project_db')
-        self.user = ""
+        self.username = ""
         self.set_username(username)
         self.create_empty()
         self.stocks_df = pd.DataFrame()
@@ -28,10 +29,18 @@ class Portofolio:
     def set_username(self, username: str):
         if not isinstance(username, str):
             raise ValueError("Name must be a string")
-        self.user = username
+        if self.is_valid_username(username):
+            self.username = username
+        else:
+            raise ValueError("Username does not comply to the username rules. Only a-z, A-Z, and 0-9 characters are allowed.")
 
     def get_username(self) -> str:
-        return self.user
+        return self.username
+    
+    @staticmethod
+    def is_valid_username(username: str) -> bool:
+        """Ensure username contains only letters, numbers, and underscores"""
+        return re.match(r"^[a-zA-Z0-9]+$", username) is not None
 
     def execute_query(self, query: str, params=None, fetch=False):
         """ Function that is called to execute an SQL query. It takes a string parameter which is a valid SQL query, and also a list of parameters if any. FOR EXAMPLE
