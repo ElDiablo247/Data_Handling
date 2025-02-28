@@ -503,12 +503,19 @@ class Portofolio:
         else:
             print("Tables have mismatches")
             return False
-                
-
+    
+    def call_test_function(self, name: str):
+        """Calls test_function(name) in PostgreSQL and returns the result."""
+        query = """
+        SELECT test_function(:name);
+        """
+        result = self.execute_query(query, {"name": name}, fetch=True)
+        return result[0][0]  # Extract the message from the fetched result
 
 
 master = Portofolio("Raul")
-master.show_total_invested()
+
+
 
 """
 assets = [
