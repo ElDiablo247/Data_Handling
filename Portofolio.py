@@ -315,24 +315,24 @@ class Portofolio:
     def create_empty(self):
         queries = [
             """CREATE TABLE IF NOT EXISTS stocks (
-                stock_name VARCHAR(255) NOT NULL PRIMARY KEY,
+                stock_name VARCHAR(50) NOT NULL PRIMARY KEY,
                 total_amount INT NOT NULL,
-                sector VARCHAR(255) NOT NULL
+                sector VARCHAR(50) NOT NULL
             );""",
             """CREATE TABLE IF NOT EXISTS etfs (
-                etf_name VARCHAR(255) NOT NULL PRIMARY KEY,
+                etf_name VARCHAR(50) NOT NULL PRIMARY KEY,
                 total_amount INT NOT NULL
             );""",
             """CREATE TABLE IF NOT EXISTS crypto (
-                crypto_name VARCHAR(255) NOT NULL PRIMARY KEY,
+                crypto_name VARCHAR(50) NOT NULL PRIMARY KEY,
                 total_amount INT NOT NULL
             );""",
             """CREATE TABLE IF NOT EXISTS positions (
-                position_id VARCHAR(255) PRIMARY KEY,
-                position_name VARCHAR(255) NOT NULL,
+                position_id VARCHAR(50) PRIMARY KEY,
+                position_name VARCHAR(50) NOT NULL,
                 position_amount INT NOT NULL,
-                asset_type VARCHAR(255) NOT NULL,
-                sector VARCHAR(255) NOT NULL
+                asset_type VARCHAR(50) NOT NULL,
+                sector VARCHAR(50) NOT NULL
             );"""
         ]
         for query in queries:
