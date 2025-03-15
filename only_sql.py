@@ -10,6 +10,8 @@ class Portofolio:
         # Initialize SQLAlchemy engine
         self.engine = create_engine('postgresql+psycopg2://postgres:6987129457@localhost/assets_project_db_2')
         self.create_empty()
+        self.users = dict()
+        self.load_users_from_db()
         self.user_name = None
         self.user_id = None
         self.account_funds = 0
@@ -47,34 +49,47 @@ class Portofolio:
         for query in queries:
             self.execute_query(query)
 
+    def load_users_from_db(self):
+        query = """SELECT * FROM users;"""
+        result = self.execute_query(query, fetch=True)
+        if result:
+            for user in result:
+                user_id = user[0]
+                user_name = user[1]
+                self.users[user_name] = user_id
+            print("All users were loaded from the DB.")
+        else:
+            print("Users table is currently empty.")
+
 
     def set_user_id(self, user_name: str):
-        # Query the database to check if the username exists
-        query = """SELECT user_id FROM users WHERE user_name = :user_name;"""
-        params = {'user_name': user_name}
-        result = self.execute_query(query, params, fetch=True)
+        # if user_name exists, either there is an existing account so the user must type his user_id to connect, or this is a new user using an existing user_name so he must choose another user_name. But if initial user_name does not exist, then it is definitely a new user.
+        if user_name in self.users:
+            user_id = self.users[user_name]
+            user_input = input(f"User '{user_name}' already exists. If you are trying to log in, type your user_id. If you are a new user, then type new: ").strip()  
 
-        if result:  # If user exists, set user_id from the database
-            self.user_id = result[0][0]  # Extract user_id from the first tuple
-            print(f"User '{user_name}' found!")
-            user_input = input("Now enter your user ID to confirm your identity: ").strip()
-            if user_input != self.user_id:
-                raise ValueError("Incorrect User ID! Access denied.")  # Stop execution if wrong
-            print(f"Access granted! Using existing ID: {self.user_id}")
-        else:  # If user does not exist, create a new one
-            self.user_name = user_name
-            self.user_id = self.user_id_generator()  # Generate a guaranteed unique ID
-            self.insert_new_user(self.user_id, user_name)
-            print(f"New user '{user_name}' created with ID: {self.user_id}")
+            if user_input == self.users[user_name]:
+                self.user_name = user_name
+                self.user_id = user_id
+                return
+            elif user_input == "new":
+                while True:
+                    user_input_2 = input("Choose a new user_name for your new account: ").strip()
+                    if user_input_2 not in self.users:
+                        self.create_new_user(user_input_2)
+                        return
+            raise ValueError("Incorrect User ID! ")
+        else:
+            self.create_new_user(user_name)
+
+
+    def create_new_user(self, user_name: str):
+        self.user_name = user_name
+        self.user_id = self.user_id_generator()  # Generate a guaranteed unique ID
+        self.insert_new_user_db(self.user_id, user_name)
+        print(f"New user '{user_name}' created with ID: {self.user_id}")
             
     def user_id_generator(self):
-        """Generates a unique user_id by checking against existing IDs in the database."""
-        query = """SELECT user_id FROM users;"""
-        result = self.execute_query(query, fetch=True)
-        
-        # Store all existing user_ids in a set for fast lookup
-        existing_user_ids = {row[0] for row in result}  
-
         while True:
             # Generate a new user_id
             letter_1 = self.user_name[0]
@@ -82,11 +97,10 @@ class Portofolio:
             numbers = f"{random.randint(0, 999):03d}"
             user_id = f"{letter_1}{letter_2}{numbers}"
 
-            # Check if it's unique
-            if user_id not in existing_user_ids:
+            if user_id not in self.users.values():
                 return user_id  # Return only if it's unique
             
-    def insert_new_user(self, user_id: str, user_name: str):
+    def insert_new_user_db(self, user_id: str, user_name: str):
         """Inserts a new user into the database."""
         query = """
         INSERT INTO users (user_id, user_name, funds) 
@@ -141,3 +155,4 @@ class Portofolio:
 
 raul = Portofolio("Raul_Birta")
 anna = Portofolio("Anna")
+max = Portofolio("Max")
