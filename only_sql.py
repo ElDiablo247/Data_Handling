@@ -6,16 +6,17 @@ import re
 
 
 class Portofolio:
-    def __init__(self, user_name: str):
+    def __init__(self, user_name: str, password: str, action: str):
         # Initialize SQLAlchemy engine
         self.engine = create_engine('postgresql+psycopg2://postgres:6987129457@localhost/assets_project_db_2')
         self.create_empty()
-        self.users = dict()
-        self.load_users_from_db()
+        self.user_names = set() 
+        self.user_ids = set()
         self.user_name = None
         self.user_id = None
-        self.account_funds = 0
-        self.set_user_id(user_name)
+        self.account_funds = None
+        self.fetch_users_ids()
+        self.execute_action(user_name, password, action)
         
 
     def create_empty(self):
@@ -43,51 +44,56 @@ class Portofolio:
             """CREATE TABLE IF NOT EXISTS users (
                 user_id VARCHAR(50) NOT NULL PRIMARY KEY,
                 user_name VARCHAR(50) NOT NULL,
-                funds INT NOT NULL
+                password VARCHAR(50) NOT NULL,
+                funds INT NOT NULL DEFAULT 0
             );"""
         ]
         for query in queries:
             self.execute_query(query)
 
-    def load_users_from_db(self):
-        query = """SELECT * FROM users;"""
-        result = self.execute_query(query, fetch=True)
+    def fetch_users_ids(self):
+        query = """
+        SELECT user_id, user_name FROM users;
+        """
+        result = self.execute_query(query, fetch='all')
         if result:
-            for user in result:
-                user_id = user[0]
-                user_name = user[1]
-                self.users[user_name] = user_id
-            print("All users were loaded from the DB.")
+            for each in result:
+                self.user_ids.add(each[0])
+                self.user_names.add(each[1])
+
+
+    def execute_action(self, user_name: str, password: str, action: str):
+        if action == "log in":
+            self.log_in_user(user_name, password)
+        elif action == "register":
+            self.create_new_user(user_name, password)
         else:
-            print("Users table is currently empty.")
+            raise ValueError("You have to type 'log in' if you are trying to log in, or 'register' if you are a new user.")
 
-
-    def set_user_id(self, user_name: str):
-        # if user_name exists, either there is an existing account so the user must type his user_id to connect, or this is a new user using an existing user_name so he must choose another user_name. But if initial user_name does not exist, then it is definitely a new user.
-        if user_name in self.users:
-            user_id = self.users[user_name]
-            user_input = input(f"User '{user_name}' already exists. If you are trying to log in, type your user_id. If you are a new user, then type new: ").strip()  
-
-            if user_input == self.users[user_name]:
-                self.user_name = user_name
-                self.user_id = user_id
-                return
-            elif user_input == "new":
-                while True:
-                    user_input_2 = input("Choose a new user_name for your new account: ").strip()
-                    if user_input_2 not in self.users:
-                        self.create_new_user(user_input_2)
-                        return
-            raise ValueError("Incorrect User ID! ")
+    def log_in_user(self, user_name: str, password: str):
+        query = """
+        SELECT user_id, user_name, funds FROM users WHERE user_name = :user_name_input AND password = :password_input;
+        """
+        params = {'user_name_input':user_name, 'password_input': password}
+        result = self.execute_query(query, params, fetch='one')
+        if result:
+            self.user_id, self.user_name, self.funds = result
+            print(f"User '{user_name}' was found and logged in.")
         else:
-            self.create_new_user(user_name)
+            raise ValueError(f"The password was wrong for '{user_name}'.  You have to try again.")
+            
 
-
-    def create_new_user(self, user_name: str):
-        self.user_name = user_name
-        self.user_id = self.user_id_generator()  # Generate a guaranteed unique ID
-        self.insert_new_user_db(self.user_id, user_name)
-        print(f"New user '{user_name}' created with ID: {self.user_id}")
+    def create_new_user(self, user_name: str, password: str):
+        if user_name in self.user_names:
+            print(f"Username '{user_name}' already exists. Try another one.")
+            username_input = input("Type another user_name: ")
+            self.create_new_user(username_input, password)
+        else:
+            self.user_name = user_name
+            local_user_id = self.user_id_generator()  # Generate a guaranteed unique ID
+            self.user_id = local_user_id
+            self.insert_new_user_db(local_user_id, user_name, password)
+            print(f"New user '{user_name}' created with ID: {self.user_id}")
             
     def user_id_generator(self):
         while True:
@@ -95,24 +101,23 @@ class Portofolio:
             letter_1 = self.user_name[0]
             letter_2 = random.choice(string.ascii_uppercase)
             numbers = f"{random.randint(0, 999):03d}"
-            user_id = f"{letter_1}{letter_2}{numbers}"
+            generated_user_id = f"{letter_1}{letter_2}{numbers}"
 
-            if user_id not in self.users.values():
-                return user_id  # Return only if it's unique
+            if generated_user_id not in self.user_ids:
+                return generated_user_id  # Return only if it's unique
             
-    def insert_new_user_db(self, user_id: str, user_name: str):
+    def insert_new_user_db(self, user_id: str, user_name: str, password: str):
         """Inserts a new user into the database."""
         query = """
-        INSERT INTO users (user_id, user_name, funds) 
-        VALUES (:user_id, :user_name, :funds);
+        INSERT INTO users (user_id, user_name, password) 
+        VALUES (:user_id, :user_name, :password);
         """
-        params = {'user_id': user_id, 'user_name': user_name, 'funds': 0}  # Default funds = 0
+        params = {'user_id': user_id, 'user_name': user_name, 'password': password}  # Default funds = 0
         self.execute_query(query, params)
         print(f"New user '{user_name}' added to the database with ID: {user_id}")
 
 
-
-    def execute_query(self, query: str, params=None, fetch=False):
+    def execute_query(self, query: str, params=None, fetch='False'):
         """ Function that is called to execute an SQL query. It takes a string parameter which is a valid SQL query, and also a list of parameters if any. FOR EXAMPLE
 
         query = '''
@@ -136,8 +141,11 @@ class Portofolio:
         """
         with self.engine.begin() as connection:
             result = connection.execute(text(query), params or {})
-            if fetch:
-                return result.fetchall()  # Fetch results if requested
+            if fetch == 'all':
+                return result.fetchall()
+            elif fetch == 'one':
+                return result.fetchone()
+            return None
     
     def execute_many(self, query: str, params_list: list):
         """ Function that executes many queries at once. A query must be first created and then a list of values is fed to this function as a parameter. The function then iterates over each query and executes them.
@@ -151,8 +159,9 @@ class Portofolio:
                 for params in params_list:
                     connection.execute(text(query), params)
 
-    
 
-raul = Portofolio("Raul_Birta")
-anna = Portofolio("Anna")
-max = Portofolio("Max")
+
+
+raul = Portofolio("Raul_Birta", "password1", "log in")
+anna = Portofolio("Anna", "password2", "log in")
+user = Portofolio("Blake", "password134", "log in")
