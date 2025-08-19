@@ -1,4 +1,4 @@
-from Portofolio import Portofolio
+from portofolio_main import Portofolio
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
