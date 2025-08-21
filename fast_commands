@@ -12,6 +12,8 @@ pf.open_position("BTC", 150, "crypto")
 pf.open_position("ETH", 100, "crypto")
 pf.open_position("GOOGL", 400, "stock")
 pf.open_position("VTI", 250, "etf")
+pf.open_position("AAPL", 90, "stock")
+pf.open_position("AAPL", 125, "stock")
 pf.log_out_user()
 
 pf7 = Portofolio()

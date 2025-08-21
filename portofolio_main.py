@@ -338,7 +338,7 @@ class Portofolio:
 
         # 1) Check latest funds in DB
         if self.get_funds_db() < asset_amount:
-            raise ValueError("Insufficient funds to open a position.")
+            raise ValueError(f"Insufficient funds to open {asset_name} worth {asset_amount}$.")
         
         # 2) Insert position in DB
         local_position_id = self.position_id_generator()
@@ -382,10 +382,38 @@ class Portofolio:
             raise ValueError(f"No position found with ID {position_id} for user {self.user_name}.")
         
         local_pos_name, local_pos_amount, local_pos_id = result # Unpack the result in variables
-        local_pos_amount = float(local_pos_amount)
-        print(f"User -{self.user_name}- closed position -{local_pos_name}- worth {local_pos_amount}$ with position ID: {local_pos_id}")
-
+        local_pos_amount = float(local_pos_amount)        
         self.modify_funds_db(local_pos_amount, "increase") # Increase account balance by position's value'
+        print(f"User -{self.user_name}- closed position -{local_pos_name}- worth {local_pos_amount}$ with position ID: {local_pos_id}")
         
 
-  
+    def close_asset(self, asset_name: str):
+        """
+        This function closes all positions of a specific asset for the logged-in user, based on user's input.
+        If user enters an asset name ("AAPL), it deletes all positions of Apple from the database and then increases the user's account balance by the total amount of money that was invested in that asset.
+        
+        Args:
+            asset_name (str): The name of the asset to close (e.g., 'AAPL', 'SPY').
+        
+        Returns:
+            None: Only prints a confirmation message with the number of positions closed and the total amount returned to the user's account.
+        """
+        query = """
+        DELETE FROM positions
+        WHERE position_name = :pos_name AND user_id = :user_id
+        RETURNING position_id, position_amount;
+        """
+        params = {"pos_name": asset_name, "user_id": self.user_id}
+        rows = self.execute_query(query, params, fetch="all")
+
+        if not rows: # If no rows were returned, raise an error
+            raise ValueError(f"No asset found named '{asset_name}' for user {self.user_name}.")
+        
+        pos_ids_list = [] # List to store closed position IDs
+        total_amount = 0.0 # Stores total amount of money returned to the user's account
+        for row in rows: # Loop to find all positions of the asset and total amount of money
+            pos_ids_list.append(row[0])
+            total_amount += float(row[1])
+
+        self.modify_funds_db(total_amount, "increase")  # Increase account balance by total
+        print(f"User -{self.user_name}- closed asset -{asset_name}- with {len(pos_ids_list)} position IDs: {', '.join(pos_ids_list)} worth {total_amount:.2f}$") # Confirmation message
