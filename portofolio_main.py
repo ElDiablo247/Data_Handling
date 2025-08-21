@@ -30,7 +30,7 @@ class Portofolio:
         queries = [
             """CREATE TABLE IF NOT EXISTS users (
                 user_id VARCHAR(50) NOT NULL PRIMARY KEY,
-                user_name VARCHAR(50) NOT NULL,
+                user_name VARCHAR(50) NOT NULL UNIQUE,
                 password VARCHAR(80) NOT NULL,
                 funds NUMERIC(12,2) NOT NULL DEFAULT 0
             );""",
@@ -186,14 +186,18 @@ class Portofolio:
         if self.signed_in == True:
             raise PermissionError("You are already logged in. To register a new account, please log out first.")
         local_username = user_name.lower()
+
         query = """
         SELECT 1
         FROM users
-        WHERE user_name = :u
-        """ # Check if the username already exists
-        params = {"u": local_username}
-        if self.execute_query(query, params, fetch="one"): # if a row has been found, then the username already exists
-            raise ValueError(f"Username '{local_username}' already exists. Try another one.") # and if not, then an error is raised!     
+        WHERE user_name = :username
+        """ 
+        params = {"username": local_username}
+        result = self.execute_query(query, params, fetch="one") 
+
+        if result: # If result is found, it means the username already exists
+            raise ValueError(f"Username '{local_username}' already exists. Try another one.") 
+        
         # Hash the password before storing
         hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         local_user_id = self.user_id_generator(local_username)  # Generate a guaranteed unique ID
@@ -265,10 +269,12 @@ class Portofolio:
         Returns:
             float: A float representing the current funds in the user's account.
         """
-        return float(self.execute_query(
-            "SELECT funds FROM users WHERE user_id = :user_id",
-            {"user_id": self.user_id}, fetch="one"
-        )[0])
+        query = "SELECT funds FROM users WHERE user_id = :user_id"
+        params = {"user_id": self.user_id}
+        result = self.execute_query(query, params, fetch="one")
+        if not result:
+            raise ValueError("User not found.")
+        return float(result[0])
     
     @requires_login
     def modify_funds_db(self, amount: float, action: str):
@@ -287,7 +293,6 @@ class Portofolio:
             raise ValueError("Amount must be positive.")
         if action not in ("increase", "decrease"):
             raise ValueError("Action must be 'increase' or 'decrease'.")
-
         if action == "increase":
             delta = amount
         else:
@@ -300,8 +305,11 @@ class Portofolio:
         RETURNING funds;
         """
         params = {"delta": delta, "uid": self.user_id}
-
         result = self.execute_query(query, params, fetch="one")
+
+        # Check if the result is None which indicates error somewhere.
+        if result is None:
+            raise RuntimeError("Failed to update account balance. User ID may not exist.")
         new_balance = float(result[0])
         print(f"Balance updated. New balance: ${new_balance}")
 
@@ -340,7 +348,7 @@ class Portofolio:
         if self.get_funds_db() < asset_amount:
             raise ValueError(f"Insufficient funds to open {asset_name} worth {asset_amount}$.")
         
-        # 2) Insert position in DB
+        # 2) Insert position in DB by first generating a unique position ID
         local_position_id = self.position_id_generator()
         query = """
         INSERT INTO positions (position_id, user_id, position_name, position_amount, asset_type)
@@ -386,7 +394,7 @@ class Portofolio:
         self.modify_funds_db(local_pos_amount, "increase") # Increase account balance by position's value'
         print(f"User -{self.user_name}- closed position -{local_pos_name}- worth {local_pos_amount}$ with position ID: {local_pos_id}")
         
-
+    @requires_login
     def close_asset(self, asset_name: str):
         """
         This function closes all positions of a specific asset for the logged-in user, based on user's input.
