@@ -1,6 +1,6 @@
+pf = Portofolio()
 pf.execute_query("DROP TABLE IF EXISTS positions;")
 pf.execute_query("DROP TABLE IF EXISTS users;")
-
 pf = Portofolio()
 pf.register_user("JohnDoe1", "password1")
 pf.log_in_user("JohnDoe1", "password1")
@@ -66,3 +66,14 @@ pf3.open_position("SOL", 250, "crypto")
 pf3.open_position("INTC", 300, "stock")
 pf3.open_position("VOO", 350, "etf")
 pf3.log_out_user()
+
+# --- Example Usage ---
+    aapl_price = get_current_price("AAPL")
+    print(f"The current price of AAPL is: ${aapl_price:.2f}")
+
+    btc_price = get_current_price("BTC-USD")
+    print(f"The current price of BTC is: ${btc_price:.2f}")
+
+    # Example for an asset that doesn't exist
+    invalid_price = get_current_price("FAKESYMBOL123")
+    print(invalid_price)

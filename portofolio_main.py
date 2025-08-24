@@ -3,8 +3,7 @@ import random
 import string
 import bcrypt
 from functools import wraps
-
-
+import yfinance as yf
 
 class Portofolio:
     def __init__(self):
@@ -425,3 +424,40 @@ class Portofolio:
 
         self.modify_funds_db(total_amount, "increase")  # Increase account balance by total
         print(f"User -{self.user_name}- closed asset -{asset_name}- with {len(pos_ids_list)} position IDs: {', '.join(pos_ids_list)} worth {total_amount:.2f}$") # Confirmation message
+
+    def get_current_price(self, asset_name: str):
+        """
+        Function that retrieves the latest price of a given asset using yfinance library.
+        
+        Args:
+            asset_name (str): The ticker symbol of the asset (e.g., 'AAPL' for Apple).
+        
+        Returns:
+            None: Prints the latest price and the source of the price information.
+        """
+        stock = yf.Ticker(asset_name)
+        info = stock.info
+
+        latest_price = None
+        price_source = "Not Available"
+
+        # Priority 1: 'regularMarketPrice' is the most current.
+        if 'regularMarketPrice' in info and info['regularMarketPrice'] is not None:
+            latest_price = info['regularMarketPrice']
+            price_source = "Regular Market Price (Most Current)"
+
+        # Priority 2: Fallback to 'currentPrice' if the first is missing.
+        elif 'currentPrice' in info and info['currentPrice'] is not None:
+            latest_price = info['currentPrice']
+            price_source = "Current Price"
+
+        # Priority 3: 'previousClose' is the most reliable price when the market is closed.
+        elif 'previousClose' in info and info['previousClose'] is not None:
+            latest_price = info['previousClose']
+            price_source = "Previous Day's Closing Price"
+
+        if latest_price is not None:
+            print(f"   Price Source: {price_source}")
+            print(f"   Price: ${latest_price:.2f}")
+        else:
+            print(f"❌ Could not determine a valid price for {asset_name}.")
