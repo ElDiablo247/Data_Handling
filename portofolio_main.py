@@ -454,7 +454,7 @@ class Portofolio:
         self.modify_funds_db(total_amount, "increase")  # Increase account balance by total
         print(f"User -{self.user_name}- closed asset -{asset_name}- with {len(pos_ids_list)} position IDs: {', '.join(pos_ids_list)} worth {total_amount:.2f}$") # Confirmation message
 
-    
+    @requires_login
     def get_asset_data(self, asset_name: str) -> list:
         """
         Function that retrieves the latest price of a given asset using yfinance library.
