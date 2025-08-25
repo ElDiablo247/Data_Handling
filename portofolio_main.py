@@ -38,8 +38,22 @@ class Portofolio:
                 user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
                 position_name VARCHAR(50) NOT NULL,
                 position_amount NUMERIC(12,2) NOT NULL,
-                asset_type VARCHAR(50) NOT NULL
-            );"""    
+                open_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+                asset_share NUMERIC(18,8) NOT NULL DEFAULT 0,
+                asset_type VARCHAR(50) NOT NULL DEFAULT 'N/A',
+                sector VARCHAR(50) NOT NULL DEFAULT 'N/A',
+                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );""",
+            """CREATE TABLE IF NOT EXISTS transactions (
+                transaction_id VARCHAR(50) NOT NULL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
+                position_name VARCHAR(50) NOT NULL,
+                position_amount NUMERIC(12,2) NOT NULL,
+                open_price NUMERIC(12,2) NOT NULL,
+                close_price NUMERIC(12,2) NOT NULL,
+                loss_profit NUMERIC(12,2) NOT NULL,
+                close_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );"""  
         ]
         for query in queries:
             self.execute_query(query)
@@ -103,7 +117,7 @@ class Portofolio:
             return func(self, *args, **kwargs)
         return wrapper
 
-    def user_id_generator(self, user_name: str) -> str:
+    def id_generator(self, id_type: str) -> str:
         """
         Generates a unique user ID based on the username.
         The ID is composed of the first letter of the username (uppercase), 
@@ -116,35 +130,28 @@ class Portofolio:
         Returns:
             str: A unique user ID that does not exist in the 'users' table.
         """
-        while True:
-            # Generate a new user_id
-            letter_1 = user_name[0].upper()
-            letter_2 = random.choice(string.ascii_uppercase)
-            numbers = f"{random.randint(0, 999):03d}"
-            generated_user_id = f"{letter_1}{letter_2}{numbers}"
+        if id_type == "user":
+            while True:
+                # Generate a new user_id
+                letter_1 = random.choice(string.ascii_uppercase)
+                letter_2 = random.choice(string.ascii_uppercase)
+                numbers = f"{random.randint(0, 999):03d}"
+                generated_user_id = f"{letter_1}{letter_2}{numbers}"
 
-            query = "SELECT 1 FROM users WHERE user_id = :id"
-            if not self.execute_query(query, {"id": generated_user_id}, fetch="one"):
-                return generated_user_id  # Return only if it's unique
-
-    @requires_login        
-    def position_id_generator(self) -> str:
-        """
-        Generates a unique 10-character alphanumeric position ID (user must be logged in).
-        The ID space is large enough to avoid collisions even with billions of positions.
-
-        Args:
-            None
-
-        Returns:
-            str: A unique position identifier.
-        """
-        chars = string.ascii_uppercase + string.digits
-        while True:
-            local_id = ''.join(random.choices(chars, k=10))   
-            query = "SELECT 1 FROM positions WHERE position_id = :id"
-            if not self.execute_query(query, {"id": local_id}, fetch="one"):
-                return local_id  # Returns the new ID only if it's unique, else the loop continues
+                query = "SELECT 1 FROM users WHERE user_id = :id"
+                if not self.execute_query(query, {"id": generated_user_id}, fetch="one"):
+                    return generated_user_id  # Return only if it's unique, else the loop continues
+        elif id_type == "position":
+            chars = string.ascii_uppercase + string.digits
+            while True:
+                local_id = ''.join(random.choices(chars, k=10))   
+                query = """
+                SELECT 1 FROM positions WHERE position_id = :id
+                UNION ALL
+                SELECT 1 FROM transactions WHERE transaction_id = :id
+                """
+                if not self.execute_query(query, {"id": local_id}, fetch="one"):
+                    return local_id  # Returns the new ID only if it's unique, else the loop continues        
             
     def insert_new_user_db(self, user_id: str, user_name: str, password: str, account_funds: float):
         """
@@ -197,9 +204,8 @@ class Portofolio:
         if result: # If result is found, it means the username already exists
             raise ValueError(f"Username '{local_username}' already exists. Try another one.") 
         
-        # Hash the password before storing
-        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        local_user_id = self.user_id_generator(local_username)  # Generate a guaranteed unique ID
+        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() # Hash the password before storing
+        local_user_id = self.id_generator("user")  # Generate a unique user ID
         local_funds = 0.0
         self.insert_new_user_db(local_user_id, local_username, hashed_password, local_funds)
 
@@ -272,11 +278,11 @@ class Portofolio:
         params = {"user_id": self.user_id}
         result = self.execute_query(query, params, fetch="one")
         if not result:
-            raise ValueError("User not found.")
+            raise ValueError("User id not found.")
         return float(result[0])
     
     @requires_login
-    def modify_funds_db(self, amount: float, action: str):
+    def modify_funds_db(self, amount: float):
         """
         Updates the logged-in user's funds in the database.
         Can increase or decrease based on the action.
@@ -288,14 +294,8 @@ class Portofolio:
         Returns:
             None: Only prints the new balance.
         """
-        if amount <= 0:
-            raise ValueError("Amount must be positive.")
-        if action not in ("increase", "decrease"):
-            raise ValueError("Action must be 'increase' or 'decrease'.")
-        if action == "increase":
-            delta = amount
-        else:
-            delta = -amount
+        if amount == 0:
+            return  # No change needed for zero amount
 
         query = """
         UPDATE users 
@@ -303,7 +303,7 @@ class Portofolio:
         WHERE user_id = :uid
         RETURNING funds;
         """
-        params = {"delta": delta, "uid": self.user_id}
+        params = {"delta": amount, "uid": self.user_id}
         result = self.execute_query(query, params, fetch="one")
 
         # Check if the result is None which indicates error somewhere.
@@ -327,8 +327,10 @@ class Portofolio:
         local_funds = self.get_funds_db()
         print(f"User ID: {self.user_id}, User Name: {self.user_name}, Account Balance: {local_funds}")
 
+
+
     @requires_login
-    def open_position(self, asset_name: str, asset_amount: int, asset_type: str):
+    def open_position(self, asset_name: str, position_amount: float):
         """
         Opens a new position for the current user by first verifying if account balance in the database is sufficient and then decreases the user's account balance by the position ammount in the database.
 
@@ -340,31 +342,58 @@ class Portofolio:
         Returns:
             None: Creates the position row and updates the user's account balance and prints a confirmation message.
         """
-        if asset_amount < 10:
+        if position_amount < 10:
             raise ValueError("Minimum amount to open a position is 10.")
-
-        # 1) Check latest funds in DB
-        if self.get_funds_db() < asset_amount:
-            raise ValueError(f"Insufficient funds to open {asset_name} worth {asset_amount}$.")
         
-        # 2) Insert position in DB by first generating a unique position ID
-        local_position_id = self.position_id_generator()
+        if not isinstance(asset_name, str): 
+            raise TypeError("Asset name must be a string.")
+
+        if self.get_funds_db() < position_amount:
+            raise ValueError(f"Insufficient funds to open {asset_name} worth {position_amount}$.")
+        
+        asset_data = self.get_asset_data(asset_name)
+        local_position_id = self.id_generator("position")
+        local_asset_price = asset_data[0]
+        local_asset_share = self.calculate_asset_shares(local_asset_price, position_amount)
+        local_asset_type = asset_data[1]
+        local_asset_sector = asset_data[2]
+
+
         query = """
-        INSERT INTO positions (position_id, user_id, position_name, position_amount, asset_type)
-        VALUES (:pos_id, :user_id, :pos_name, :pos_amount, :asset_type);
+        INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector) 
+        VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector);
         """
         params = {
-            "pos_id": local_position_id,
-            "user_id": self.user_id,
-            "pos_name": asset_name,
-            "pos_amount": asset_amount,
-            "asset_type": asset_type,
+            'position_id': local_position_id,
+            'user_id': self.user_id,
+            'position_name': asset_name,
+            'position_amount': position_amount,
+            'open_price': local_asset_price,
+            'asset_share': local_asset_share,
+            'asset_type': local_asset_type,
+            'sector': local_asset_sector
         }
         self.execute_query(query, params)
+ 
+        negative_pos_amount = -float(position_amount) 
+        self.modify_funds_db(negative_pos_amount)
+        print(f"Bought asset {asset_name} with position ID {local_position_id} at price {local_asset_price}$ and {local_asset_share} shares in sector {local_asset_sector}.")
 
-        # 3) Deduct funds in DB
-        self.modify_funds_db(asset_amount, "decrease")
-        print(f"Opened position: {asset_name} ({asset_type}) with ID {local_position_id} for ${asset_amount}.")
+    @requires_login
+    def calculate_asset_shares(self, asset_price: float, asset_amount: float) -> float:
+        """
+        Function that calculates the number of shares that can be bought with a given amount of money at a specific asset price.
+        For example, if the asset price is $150 and the user wants to invest $300, the function will return 2.0 shares.
+
+        Args:
+            asset_price (float): The current price of the asset.
+            asset_amount (float): The amount of money the investor wants to invest in the asset.
+        
+        Returns:
+            float: The number of shares that can be bought, rounded to 8 decimal places.
+        """
+        shares = asset_amount / asset_price 
+        return round(shares, 8)
 
     @requires_login
     def close_position(self, position_id: str):
@@ -386,12 +415,12 @@ class Portofolio:
         result = self.execute_query(query, params, fetch="one")
         # If no position was found, raise an error
         if not result:
-            raise ValueError(f"No position found with ID {position_id} for user {self.user_name}.")
-        
+            raise ValueError(f"No position found with ID {position_id} for user {self.user_name}.")  
         local_pos_name, local_pos_amount, local_pos_id = result # Unpack the result in variables
-        local_pos_amount = float(local_pos_amount)        
-        self.modify_funds_db(local_pos_amount, "increase") # Increase account balance by position's value'
-        print(f"User -{self.user_name}- closed position -{local_pos_name}- worth {local_pos_amount}$ with position ID: {local_pos_id}")
+
+        local_pos_amount = float(local_pos_amount)
+        self.modify_funds_db(local_pos_amount) # Increase account balance by position's value
+        print(f"User -{self.user_name}- closed position -{local_pos_name}- worth {float(local_pos_amount)}$ with position ID: {local_pos_id}")
         
     @requires_login
     def close_asset(self, asset_name: str):
@@ -425,7 +454,8 @@ class Portofolio:
         self.modify_funds_db(total_amount, "increase")  # Increase account balance by total
         print(f"User -{self.user_name}- closed asset -{asset_name}- with {len(pos_ids_list)} position IDs: {', '.join(pos_ids_list)} worth {total_amount:.2f}$") # Confirmation message
 
-    def get_current_price(self, asset_name: str):
+    
+    def get_asset_data(self, asset_name: str) -> list:
         """
         Function that retrieves the latest price of a given asset using yfinance library.
         
@@ -435,29 +465,22 @@ class Portofolio:
         Returns:
             None: Prints the latest price and the source of the price information.
         """
-        stock = yf.Ticker(asset_name)
-        info = stock.info
+        ticker = yf.Ticker(asset_name)
+        if not ticker.info:
+            raise ValueError(f"Asset '{asset_name}' not found or no data available.")
+        asset_info = ticker.info
 
-        latest_price = None
-        price_source = "Not Available"
-
-        # Priority 1: 'regularMarketPrice' is the most current.
-        if 'regularMarketPrice' in info and info['regularMarketPrice'] is not None:
-            latest_price = info['regularMarketPrice']
-            price_source = "Regular Market Price (Most Current)"
-
-        # Priority 2: Fallback to 'currentPrice' if the first is missing.
-        elif 'currentPrice' in info and info['currentPrice'] is not None:
-            latest_price = info['currentPrice']
-            price_source = "Current Price"
-
-        # Priority 3: 'previousClose' is the most reliable price when the market is closed.
-        elif 'previousClose' in info and info['previousClose'] is not None:
-            latest_price = info['previousClose']
-            price_source = "Previous Day's Closing Price"
-
-        if latest_price is not None:
-            print(f"   Price Source: {price_source}")
-            print(f"   Price: ${latest_price:.2f}")
+        market_state = asset_info.get("marketState", None)
+        asset_price = None
+        asset_type = asset_info.get('quoteType', "N/A")
+        sector = asset_info.get('sector', "N/A")
+        
+        if market_state in ["CLOSE", "PRE", "POST"]:
+            asset_price = asset_info.get('previousClose', None)
+        elif market_state == "REGULAR":
+            asset_price = asset_info.get('regularMarketPrice', None)
         else:
-            print(f"❌ Could not determine a valid price for {asset_name}.")
+            raise ValueError(f"Market state is not recognized or unsupported.")
+        
+        asset_data = [asset_price, asset_type, sector]
+        return asset_data
