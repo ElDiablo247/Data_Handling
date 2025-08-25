@@ -475,7 +475,7 @@ class Portofolio:
         asset_type = asset_info.get('quoteType', "N/A")
         sector = asset_info.get('sector', "N/A")
         
-        if market_state in ["CLOSE", "PRE", "POST"]:
+        if market_state in ["CLOSED", "PRE", "POST"]:
             asset_price = asset_info.get('previousClose', None)
         elif market_state == "REGULAR":
             asset_price = asset_info.get('regularMarketPrice', None)
