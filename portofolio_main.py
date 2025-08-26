@@ -4,6 +4,7 @@ import string
 import bcrypt
 from functools import wraps
 import yfinance as yf
+import pandas as pd
 
 class Portofolio:
     def __init__(self):
@@ -81,6 +82,8 @@ class Portofolio:
                 return result.fetchall()
             elif fetch == 'one':
                 return result.fetchone()
+            elif fetch == 'proxy':
+                return result
             return None
     
     def execute_many(self, query: str, params_list: list):
@@ -531,3 +534,28 @@ class Portofolio:
         asset_data = [asset_price, asset_type, sector]
         return asset_data 
     
+    @requires_login
+    def get_all_positions_df(self) -> pd.DataFrame:
+        """
+        Retrieves all open positions for the logged-in user and returns them as a Pandas DataFrame.
+        """
+        query = "SELECT * FROM positions WHERE user_id = :user_id;"
+        params = {"user_id": self.user_id}
+        
+        # 1. Get the result proxy object
+        result_proxy = self.execute_query(query, params, fetch='proxy')
+        
+        # 2. Get keys and data from the proxy
+        #    - .keys() gets the column names
+        #    - .fetchall() gets all rows and exhausts the proxy
+        column_names = list(result_proxy.keys())
+        results = result_proxy.fetchall()
+
+        # 3. Now, check if the results list is empty
+        if not results:
+            print(f"No positions found for user '{self.user_name}'.")
+            return pd.DataFrame()
+        
+        # 4. Create the DataFrame
+        local_df = pd.DataFrame(results, columns=column_names)
+        return local_df
