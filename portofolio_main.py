@@ -52,6 +52,7 @@ class Portofolio:
                 open_price NUMERIC(12,2) NOT NULL,
                 close_price NUMERIC(12,2) NOT NULL,
                 loss_profit NUMERIC(12,2) NOT NULL,
+                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,
                 close_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
             );"""  
         ]
@@ -310,7 +311,7 @@ class Portofolio:
         if result is None:
             raise RuntimeError("Failed to update account balance. User ID may not exist.")
         new_balance = float(result[0])
-        print(f"Balance updated. New balance: ${new_balance}")
+        print(f"Balance updated by {amount}$. New balance: ${new_balance}")
 
     @requires_login
     def get_account_info(self):
@@ -327,8 +328,6 @@ class Portofolio:
         local_funds = self.get_funds_db()
         print(f"User ID: {self.user_id}, User Name: {self.user_name}, Account Balance: {local_funds}")
 
-
-
     @requires_login
     def open_position(self, asset_name: str, position_amount: float):
         """
@@ -342,15 +341,15 @@ class Portofolio:
         Returns:
             None: Creates the position row and updates the user's account balance and prints a confirmation message.
         """
+        # Checks for valid inputs
         if position_amount < 10:
             raise ValueError("Minimum amount to open a position is 10.")
-        
         if not isinstance(asset_name, str): 
             raise TypeError("Asset name must be a string.")
-
         if self.get_funds_db() < position_amount:
             raise ValueError(f"Insufficient funds to open {asset_name} worth {position_amount}$.")
         
+        # Retrieve asset data using the function get_asset_data (which also does validity checks)
         asset_data = self.get_asset_data(asset_name)
         local_position_id = self.id_generator("position")
         local_asset_price = asset_data[0]
@@ -358,7 +357,7 @@ class Portofolio:
         local_asset_type = asset_data[1]
         local_asset_sector = asset_data[2]
 
-
+        # Insert the new position into the database
         query = """
         INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector) 
         VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector);
@@ -374,10 +373,11 @@ class Portofolio:
             'sector': local_asset_sector
         }
         self.execute_query(query, params)
- 
+
+        # Show the user a confirmation message and decrease user's funds in the database!
         negative_pos_amount = -float(position_amount) 
-        self.modify_funds_db(negative_pos_amount)
         print(f"Bought asset {asset_name} with position ID {local_position_id} at price {local_asset_price}$ and {local_asset_share} shares in sector {local_asset_sector}.")
+        self.modify_funds_db(negative_pos_amount)
 
     @requires_login
     def calculate_asset_shares(self, asset_price: float, asset_amount: float) -> float:
@@ -406,22 +406,68 @@ class Portofolio:
         Returns:
             None: Only prints a confirmation message.
         """
+        db_position = self.get_position_db(position_id) 
+        self.complete_transaction(db_position)
+
         query = """
         DELETE FROM positions
         WHERE position_id = :pos_id AND user_id = :user_id
-        RETURNING position_name, position_amount, position_id;
+        RETURNING position_id, position_name, position_amount;
         """
         params = {"pos_id": position_id, "user_id": self.user_id}
         result = self.execute_query(query, params, fetch="one")
-        # If no position was found, raise an error
-        if not result:
-            raise ValueError(f"No position found with ID {position_id} for user {self.user_name}.")  
-        local_pos_name, local_pos_amount, local_pos_id = result # Unpack the result in variables
 
-        local_pos_amount = float(local_pos_amount)
-        self.modify_funds_db(local_pos_amount) # Increase account balance by position's value
-        print(f"User -{self.user_name}- closed position -{local_pos_name}- worth {float(local_pos_amount)}$ with position ID: {local_pos_id}")
-        
+        if not result: # If no rows were returned, raise an error
+            raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
+        print(f"User -{self.user_name}- closed position -{result[1]}- with position ID: {position_id} and invested amount {result[2]}$")
+
+    @requires_login
+    def get_position_db(self, position_id: str) -> tuple:
+        query = """
+        SELECT position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector, open_datetime
+        FROM positions
+        WHERE position_id = :pos_id AND user_id = :user_id;
+        """
+        params = {"pos_id": position_id, "user_id": self.user_id}
+        result = self.execute_query(query, params, fetch="one")
+        if not result:
+            raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
+        return result
+
+    @requires_login
+    def complete_transaction(self, result: tuple):
+        db_pos_id = result[0]
+        db_pos_name = result[2]
+        db_pos_open_datetime = result[8]
+        db_pos_amount, db_pos_open_price, db_asset_share = map(float, (result[3], result[4], result[5]))
+
+        local_data = self.get_asset_data(db_pos_name) # Retrieve asset data from yfinance
+        current_asset_price = float(local_data[0]) # The current price of the asset is on index 0 of the returned list
+
+        if current_asset_price == 0.0:
+            raise ValueError("Current asset price is 0. Cannot compute profit/loss and cannot close position at this time.")          
+        local_profit_loss = round((current_asset_price - db_pos_open_price) * (db_asset_share), 2)
+
+        query = """
+        INSERT INTO transactions (transaction_id, user_id, position_name, position_amount, open_price, close_price, loss_profit, open_datetime)
+        VALUES (:transaction_id, :user_id, :position_name, :position_amount, :open_price, :close_price, :loss_profit, :open_datetime);
+        """
+        params = {
+            'transaction_id': db_pos_id,
+            'user_id': self.user_id,
+            'position_name': db_pos_name,
+            'position_amount': db_pos_amount,
+            'open_price': db_pos_open_price,
+            'close_price': current_asset_price,
+            'loss_profit': local_profit_loss,
+            'open_datetime': db_pos_open_datetime
+        }
+        self.execute_query(query, params)
+        print(f"Completed transaction with ID: {db_pos_id} at the current price of -{current_asset_price}-. The profit/loss was {local_profit_loss}$.")
+
+        return_amount = db_pos_amount + local_profit_loss
+        self.modify_funds_db(return_amount)
+
     @requires_login
     def close_asset(self, asset_name: str):
         """
@@ -471,16 +517,17 @@ class Portofolio:
         asset_info = ticker.info
 
         market_state = asset_info.get("marketState", None)
-        asset_price = None
+        asset_price = 0.0
         asset_type = asset_info.get('quoteType', "N/A")
         sector = asset_info.get('sector', "N/A")
         
         if market_state in ["CLOSED", "PRE", "POST"]:
-            asset_price = asset_info.get('previousClose', None)
+            asset_price = asset_info.get('previousClose', 0.0)
         elif market_state == "REGULAR":
-            asset_price = asset_info.get('regularMarketPrice', None)
+            asset_price = asset_info.get('regularMarketPrice', 0.0)
         else:
             raise ValueError(f"Market state is not recognized or unsupported.")
         
         asset_data = [asset_price, asset_type, sector]
-        return asset_data
+        return asset_data 
+    

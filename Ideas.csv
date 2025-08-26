@@ -1,1 +1,2 @@
 Create Cache for API calls to make them faster  
+Fix the asset_price in get_asset_data function in case there is no price found ("N/A" or 0) so that the database has valid types
