@@ -5,6 +5,7 @@ import bcrypt
 from functools import wraps
 import yfinance as yf
 import pandas as pd
+import datetime
 
 class Portofolio:
     def __init__(self):
@@ -401,31 +402,56 @@ class Portofolio:
     @requires_login
     def close_position(self, position_id: str):
         """
-        Searches an existing position by its ID and if found, it deletes it from the database. After that it updates the user's account balance and outputs a confirmation message to the user.
-        
-        Args:   
+        Orchestrates the closing of a single open position.
+
+        This function acts as a high-level manager for the closing process. It
+        sequences the calls to various helper functions to:
+        1. Fetch the position's data from the database.
+        2. Get the current asset price from the API.
+        3. Calculate the profit or loss.
+        4. Log the completed trade in the transactions history.
+        5. Delete the position from the active positions table.
+        6. Update the user's account funds.
+
+        Args:
             position_id (str): The unique identifier of the position to close.
-        
+
         Returns:
-            None: Only prints a confirmation message.
+            None
         """
-        db_position = self.get_position_db(position_id) 
-        self.complete_transaction(db_position)
+        db_position_object = self.get_position_db(position_id) # Retrieve the position's details from the database (tuple)
+        db_pos_name = db_position_object[2]
 
-        query = """
-        DELETE FROM positions
-        WHERE position_id = :pos_id AND user_id = :user_id
-        RETURNING position_id, position_name, position_amount;
-        """
-        params = {"pos_id": position_id, "user_id": self.user_id}
-        result = self.execute_query(query, params, fetch="one")
+        # Re-use an existing function to make an API call and retrieve the asset's live data, then store only the asset's current price
+        asset_data = self.get_asset_data(db_pos_name)
+        asset_price_at_close = asset_data[0] 
 
-        if not result: # If no rows were returned, raise an error
-            raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
-        print(f"User -{self.user_name}- closed position -{result[1]}- with position ID: {position_id} and invested amount {result[2]}$")
+        db_pos_amount = float(db_position_object[3])
+        db_pos_open_price = float(db_position_object[4])
+        db_asset_share = float(db_position_object[5])
+        
+        local_profit_loss = round((asset_price_at_close - db_pos_open_price) * (db_asset_share), 2)
 
+        self.complete_transaction(db_position_object, asset_price_at_close, local_profit_loss)
+
+        self.delete_position_db(position_id) # Delete the position from the database
+
+        return_amount = db_pos_amount + local_profit_loss
+        self.modify_funds_db(return_amount) # Increase account balance by the amount returned from the transaction
+        
     @requires_login
     def get_position_db(self, position_id: str) -> tuple:
+        """
+        Retrieves all data for a single position from the database. Searches the 'positions' table for a specific position belonging to the
+        currently logged-in user, identified by its unique position ID.
+
+        Args:
+            position_id (str): The unique identifier for the position.
+
+        Returns:
+            tuple: A tuple containing all columns for the found position row.
+                   Raises a ValueError if no matching position is found.
+        """
         query = """
         SELECT position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector, open_datetime
         FROM positions
@@ -435,21 +461,30 @@ class Portofolio:
         result = self.execute_query(query, params, fetch="one")
         if not result:
             raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
+
         return result
 
     @requires_login
-    def complete_transaction(self, result: tuple):
-        db_pos_id = result[0]
-        db_pos_name = result[2]
-        db_pos_open_datetime = result[8]
-        db_pos_amount, db_pos_open_price, db_asset_share = map(float, (result[3], result[4], result[5]))
+    def complete_transaction(self, position_object: tuple, asset_price_at_close: float, profit_loss: float):
+        """
+        Logs a completed trade into the transactions table.
 
-        local_data = self.get_asset_data(db_pos_name) # Retrieve asset data from yfinance
-        current_asset_price = float(local_data[0]) # The current price of the asset is on index 0 of the returned list
+        This is a simple helper function that takes all the necessary,
+        pre-calculated data for a closed position and inserts it into the
+        `transactions` table to create a permanent historical record.
 
-        if current_asset_price == 0.0:
-            raise ValueError("Current asset price is 0. Cannot compute profit/loss and cannot close position at this time.")          
-        local_profit_loss = round((current_asset_price - db_pos_open_price) * (db_asset_share), 2)
+        Args:
+            position_object (tuple): The original position data from the database.
+            asset_price_at_close (float): The asset's market price at the time of closing.
+            profit_loss (float): The calculated profit or loss for the trade.
+
+        Returns:
+            None: Prints a confirmation message to the user with all the data that was entered in the transaction table.
+        """
+        db_pos_id = position_object[0]
+        db_pos_name = position_object[2]
+        db_pos_open_datetime = position_object[8]
+        db_pos_amount, db_pos_open_price = map(float, (position_object[3], position_object[4]))
 
         query = """
         INSERT INTO transactions (transaction_id, user_id, position_name, position_amount, open_price, close_price, loss_profit, open_datetime)
@@ -461,15 +496,40 @@ class Portofolio:
             'position_name': db_pos_name,
             'position_amount': db_pos_amount,
             'open_price': db_pos_open_price,
-            'close_price': current_asset_price,
-            'loss_profit': local_profit_loss,
+            'close_price': asset_price_at_close,
+            'loss_profit': profit_loss,
             'open_datetime': db_pos_open_datetime
         }
-        self.execute_query(query, params)
-        print(f"Completed transaction with ID: {db_pos_id} at the current price of -{current_asset_price}-. The profit/loss was {local_profit_loss}$.")
+        self.execute_query(query, params)   
 
-        return_amount = db_pos_amount + local_profit_loss
-        self.modify_funds_db(return_amount)
+        print(f"User -{self.user_name}-, completed a transaction with ID: {db_pos_id}, for asset {db_pos_name}, at the current price of {asset_price_at_close}$. The invested amount was {db_pos_amount}$ and the profit/loss is {profit_loss}$.")
+    
+    def delete_position_db(self, position_id: str):
+        """
+        Deletes a single position from the active positions table.
+
+        This helper function executes the DELETE statement for a given position ID
+        and user ID. It uses the RETURNING clause to confirm that a row was
+        actually found and deleted, raising a ValueError if not.
+
+        Args:
+            position_id (str): The unique identifier of the position to delete.
+
+        Returns:
+            None: Prints a confirmation message of the deletion to the user.
+        """
+        # Delete the position from the database
+        query = """
+        DELETE FROM positions
+        WHERE position_id = :pos_id AND user_id = :user_id
+        RETURNING position_id, position_name;
+        """
+        params = {"pos_id": position_id, "user_id": self.user_id}
+        result = self.execute_query(query, params, fetch="one")
+
+        if not result: # If no rows were returned, raise an error
+            raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
+        print(f"Closed position with position ID: {position_id}")
 
     @requires_login
     def close_asset(self, asset_name: str):
@@ -506,31 +566,37 @@ class Portofolio:
     @requires_login
     def get_asset_data(self, asset_name: str) -> list:
         """
-        Function that retrieves the latest price of a given asset using yfinance library.
-        
+        Retrieves live market data for a given financial asset.
+
+        This function uses the yfinance library to fetch an asset's current
+        market price, type, and sector. It includes robust checks to handle
+        different market states (e.g., open, closed, post-market) and validates
+        that the retrieved price is a valid, positive number before returning.
+
         Args:
-            asset_name (str): The ticker symbol of the asset (e.g., 'AAPL' for Apple).
-        
+            asset_name (str): The ticker symbol of the asset (e.g., 'AAPL').
+
         Returns:
-            None: Prints the latest price and the source of the price information.
+            list: A list containing the [price, asset_type, sector].
         """
         ticker = yf.Ticker(asset_name)
         if not ticker.info:
             raise ValueError(f"Asset '{asset_name}' not found or no data available.")
         asset_info = ticker.info
-
         market_state = asset_info.get("marketState", None)
-        asset_price = 0.0
-        asset_type = asset_info.get('quoteType', "N/A")
-        sector = asset_info.get('sector', "N/A")
+        asset_price = None
         
-        if market_state in ["CLOSED", "PRE", "POST"]:
+        if market_state in ["CLOSED", "PRE", "POST", "POSTPOST"]:
             asset_price = asset_info.get('previousClose', 0.0)
         elif market_state == "REGULAR":
             asset_price = asset_info.get('regularMarketPrice', 0.0)
         else:
-            raise ValueError(f"Market state is not recognized or unsupported.")
+            raise ValueError(f"Current market state is -{market_state}- and this Market state is not recognized or unsupported.")  
+        if not asset_price or asset_price <= 0.0:
+            raise ValueError(f"Current price for '{asset_name}' is {asset_price} so either a negative number or doesn't exist. The process cannot continue.")
         
+        asset_type = asset_info.get('quoteType', "N/A")
+        sector = asset_info.get('sector', "N/A")
         asset_data = [asset_price, asset_type, sector]
         return asset_data 
     
