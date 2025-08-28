@@ -25,6 +25,9 @@ pf1.open_position("AAPL", 90)
 pf1.open_position("AAPL", 125)
 pf1.log_out_user()
 
+user_df = pf1.get_all_positions_df()
+user_df
+
 # Instance 2
 pf2 = Portofolio()
 pf2.register_user("JohnDoe2", "password2")

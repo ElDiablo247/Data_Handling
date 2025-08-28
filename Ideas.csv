@@ -1,2 +1,3 @@
 Create Cache for API calls to make them faster  
 Fix the asset_price in get_asset_data function in case there is no price found ("N/A" or 0) so that the database has valid types
+If get_position_db succeeds, then there is no reason for close_position to fail because the deletion query is the same with the select query in get_position_db
