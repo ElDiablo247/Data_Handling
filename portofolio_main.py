@@ -14,7 +14,10 @@ class Portofolio:
         self.user_id = None
         self.user_name = None 
         self.signed_in = False
+        self.db_calls = 0
+        self.api_calls = 0
         self.create_empty()
+        
         
     def create_empty(self):
         """
@@ -60,6 +63,8 @@ class Portofolio:
         ]
         for query in queries:
             self.execute_query(query)
+        self.db_calls = 0
+        self.api_calls = 0
 
     def execute_query(self, query: str, params=None, fetch=None):
         """
@@ -77,6 +82,7 @@ class Portofolio:
             Any: When fetch is 'all' returns a list of rows; when 'one' returns a single row;
             otherwise returns None.
         """
+        self.db_calls += 1 # Increment db calls by one, each time a db call is made
         with self.engine.begin() as connection:
             result = connection.execute(text(query), params or {})
             if fetch == 'all':
@@ -580,6 +586,8 @@ class Portofolio:
             list: A list containing the [price, asset_type, sector].
         """
         ticker = yf.Ticker(asset_name)
+        self.api_calls += 1 
+
         if not ticker.info:
             raise ValueError(f"Asset '{asset_name}' not found or no data available.")
         asset_info = ticker.info
@@ -625,3 +633,8 @@ class Portofolio:
         # 4. Create the DataFrame
         local_df = pd.DataFrame(results, columns=column_names)
         return local_df
+    
+    def show_db_api_calls(self):
+        print(f"Total DB calls are '{self.db_calls}' and total API calls are '{self.api_calls}.")
+        self.db_calls = 0
+        self.api_calls = 0
