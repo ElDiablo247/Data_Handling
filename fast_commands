@@ -23,7 +23,8 @@ pf1.open_position("VTI", 243)
 pf1.open_position("VTI", 123)
 pf1.open_position("AAPL", 90)
 pf1.open_position("AAPL", 125)
-pf1.log_out_user()
+pf1.show_db_api_calls()
+
 
 user_df = pf1.get_all_positions_df()
 user_df
