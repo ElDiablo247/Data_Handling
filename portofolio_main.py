@@ -22,9 +22,10 @@ class Portofolio:
     def create_empty(self):
         """
         Creates the necessary database tables if they do not already exist.
-        This function sets up the 'positions' and 'users' tables with the required
-        columns and constraints for storing portfolio data and user information.
-
+        This function sets up the 'users', 'positions', and 'transactions' tables
+        with the required columns and constraints. It also resets the session's
+        database and API call counters.
+        
         Args:
             None
 
@@ -66,7 +67,7 @@ class Portofolio:
         self.db_calls = 0
         self.api_calls = 0
 
-    def execute_query(self, query: str, params=None, fetch=None):
+    def execute_query(self, query: str, params=None, fetch=None, connection=None):
         """
         Executes a single SQL query with optional parameters and optional result fetching.
         The function uses bound parameters to avoid SQL injection and can return either
@@ -77,14 +78,19 @@ class Portofolio:
             params (dict, optional): A mapping of parameter names to values. Defaults to {}.
             fetch (str, optional): Set to 'all' to fetch all rows, 'one' to fetch a single row,
                 or leave as None to execute without fetching. Defaults to None.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection. If provided, the query is executed within the context of this
+                connection's transaction. If None, a new transaction is created.
+                Defaults to None.
 
         Returns:
             Any: When fetch is 'all' returns a list of rows; when 'one' returns a single row;
             otherwise returns None.
         """
         self.db_calls += 1 # Increment db calls by one, each time a db call is made
-        with self.engine.begin() as connection:
-            result = connection.execute(text(query), params or {})
+
+        def _execute_and_fetch(conn):
+            result = conn.execute(text(query), params or {})
             if fetch == 'all':
                 return result.fetchall()
             elif fetch == 'one':
@@ -92,23 +98,11 @@ class Portofolio:
             elif fetch == 'proxy':
                 return result
             return None
-    
-    def execute_many(self, query: str, params_list: list):
-        """
-        Executes the same SQL statement multiple times with different parameter sets
-        inside a single transaction. Each item in 'params_list' is executed once.
-
-        Args:
-            query (str): A valid SQL query string with named parameters.
-            params_list (list): A list of dictionaries, each providing values for the query parameters.
-
-        Returns:
-            None: Executes all statements within a transaction without returning results.
-        """
-        with self.engine.connect() as connection:
-            with connection.begin():  # Automatically handles transactions
-                for params in params_list:
-                    connection.execute(text(query), params)
+        
+        if connection:
+            return _execute_and_fetch(connection)
+        with self.engine.begin() as conn:
+            return _execute_and_fetch(conn)
 
     def requires_login(func):
         """
@@ -130,16 +124,21 @@ class Portofolio:
 
     def id_generator(self, id_type: str) -> str:
         """
-        Generates a unique user ID based on the username.
-        The ID is composed of the first letter of the username (uppercase), 
-        a random uppercase letter, and a three-digit random number.
-        The function ensures that the generated ID does not already exist in the database.
+        Generates a unique, random ID for either a 'user' or a 'position' depending on the 'id_type' argument.
+
+        The function ensures that the generated ID does not already exist in the
+        relevant database tables before returning it (users or positions).
+        - For 'user', it generates a 5-character ID of 2 letters followed by 3 numbers (e.g., 'AB123') and checks for
+          uniqueness in the 'users' table.
+        - For 'position', it generates a 10-character alphanumeric ID and checks for
+          uniqueness across both the 'positions' and 'transactions' tables to
+          prevent collisions when a position is closed.
 
         Args:
-            user_name (str): The username from which to derive the first letter for the ID.
+            id_type (str): The type of ID to generate, either "user" or "position".
 
         Returns:
-            str: A unique user ID that does not exist in the 'users' table.
+            str: A unique ID.
         """
         if id_type == "user":
             while True:
@@ -197,6 +196,10 @@ class Portofolio:
             user_name (str): The desired username for the new account.
             password (str): The plain-text password to hash and store securely.
 
+        Raises:
+            PermissionError: If a user is already logged in.
+            ValueError: If the username already exists in the database.
+
         Returns:
             None: Adds the new user to the database or raises an error if the username is taken.
         """
@@ -229,6 +232,10 @@ class Portofolio:
             user_name (str): The username of the account to log in.
             password (str): The plain-text password to verify against the stored hash.
 
+        Raises:
+            PermissionError: If a user is already logged in.
+            ValueError: If the username is not found or the password is incorrect.
+
         Returns:
             None: Updates the object's user-related attributes and prints login confirmation.
         """
@@ -259,11 +266,14 @@ class Portofolio:
     def log_out_user(self):
         """
         Logs out the currently logged-in user by resetting user-related attributes.
-        This function clears the user ID, username, and account funds, effectively logging out the user.
+        This function clears the user ID and username from the instance and sets
+        the login status to False.
 
         Args:
             None
 
+        Raises:
+            PermissionError: If no user is currently logged in.
         Returns:
             None: Resets the user's session data.
         """
@@ -293,35 +303,36 @@ class Portofolio:
         return float(result[0])
     
     @requires_login
-    def modify_funds_db(self, amount: float):
+    def modify_funds_db(self, amount: float, connection=None):
         """
         Updates the logged-in user's funds in the database.
-        Can increase or decrease based on the action.
+        Can increase or decrease based on the amount if possitve or negative.
 
         Args:
-            amount (float): Positive amount to change the balance by.
-            action (str): 'increase' or 'decrease'. If decrease, the amount becomes negative.
+            amount (float): Positive or negative amount to change the balance by.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
 
         Returns:
-            None: Only prints the new balance.
+            None: Only prints the change in funds and the new balance.
         """
-        if amount == 0:
-            return  # No change needed for zero amount
+        if amount != 0:
+            query = """
+            UPDATE users 
+            SET funds = funds + :delta 
+            WHERE user_id = :uid
+            RETURNING funds;
+            """
+            params = {"delta": amount, "uid": self.user_id}
+            result = self.execute_query(query, params, fetch="one", connection=connection)
 
-        query = """
-        UPDATE users 
-        SET funds = funds + :delta 
-        WHERE user_id = :uid
-        RETURNING funds;
-        """
-        params = {"delta": amount, "uid": self.user_id}
-        result = self.execute_query(query, params, fetch="one")
-
-        # Check if the result is None which indicates error somewhere.
-        if result is None:
-            raise RuntimeError("Failed to update account balance. User ID may not exist.")
-        new_balance = float(result[0])
-        print(f"Balance updated by {amount}$. New balance: ${new_balance}")
+            # Check if the result is None which indicates error somewhere.
+            if result is None:
+                raise RuntimeError("Failed to update account balance. User ID may not exist.")
+            new_balance = float(result[0])
+            print(f"Balance updated by {amount}$. New balance: ${new_balance}")
+        else:
+            print(f"Amount was 0 so balance was not changed.")
 
     @requires_login
     def get_account_info(self):
@@ -341,15 +352,21 @@ class Portofolio:
     @requires_login
     def open_position(self, asset_name: str, position_amount: float):
         """
-        Opens a new position for the current user by first verifying if account balance in the database is sufficient and then decreases the user's account balance by the position ammount in the database.
+        Orchestrates opening a new position for the logged-in user.
+
+        This function handles the entire process of opening a position:
+        1. Validates the input amount and user's available funds.
+        2. Fetches live market data for the asset via an API call.
+        3. Calculates the number of shares based on the current price.
+        4. Atomically inserts the new position to the 'positions' table and deducts the cost from the
+           user's funds in a single database transaction.
 
         Args:
-            asset_name (str): The name/ticker of the asset to buy.
-            asset_amount (int): The amount (cash) to allocate to this position.
-            asset_type (str): The asset type ('stock', 'etf', or 'crypto').
+            asset_name (str): The name/ticker of the asset to buy (e.g., 'AAPL').
+            position_amount (float): The amount of cash to invest in this position.
 
         Returns:
-            None: Creates the position row and updates the user's account balance and prints a confirmation message.
+            None: On success, prints a confirmation message. Raises an error on failure.
         """
         # Checks for valid inputs
         if position_amount < 10:
@@ -367,27 +384,28 @@ class Portofolio:
         local_asset_type = asset_data[1]
         local_asset_sector = asset_data[2]
 
-        # Insert the new position into the database
-        query = """
-        INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector) 
-        VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector);
-        """
-        params = {
-            'position_id': local_position_id,
-            'user_id': self.user_id,
-            'position_name': asset_name,
-            'position_amount': position_amount,
-            'open_price': local_asset_price,
-            'asset_share': local_asset_share,
-            'asset_type': local_asset_type,
-            'sector': local_asset_sector
-        }
-        self.execute_query(query, params)
+        with self.engine.begin() as connection:
+            # Insert the new position into the database
+            query = """
+            INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector) 
+            VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector);
+            """
+            params = {
+                'position_id': local_position_id,
+                'user_id': self.user_id,
+                'position_name': asset_name,
+                'position_amount': position_amount,
+                'open_price': local_asset_price,
+                'asset_share': local_asset_share,
+                'asset_type': local_asset_type,
+                'sector': local_asset_sector
+            }
+            self.execute_query(query, params, connection=connection)
 
-        # Show the user a confirmation message and decrease user's funds in the database!
-        negative_pos_amount = -float(position_amount) 
+            pos_amount = -float(position_amount) # Make the amount negative so that it gets deducted from user's account balance.     
+            self.modify_funds_db(pos_amount, connection=connection)
+
         print(f"Bought asset {asset_name} with position ID {local_position_id} at price {local_asset_price}$ and {local_asset_share} shares in sector {local_asset_sector}.")
-        self.modify_funds_db(negative_pos_amount)
 
     @requires_login
     def calculate_asset_shares(self, asset_price: float, asset_amount: float) -> float:
@@ -537,13 +555,13 @@ class Portofolio:
             raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
         print(f"Closed position with position ID: {position_id}")
 
-    @requires_login
+    """@requires_login
     def close_asset(self, asset_name: str):
         
         asset_current_data = self.get_asset_data(asset_name) # This 
         current_price = asset_current_data[0]
         asset_type = asset_current_data[1]
-        asset_sector = asset_current_data[2]
+        asset_sector = asset_current_data[2]"""
         
 
     @requires_login
@@ -589,6 +607,11 @@ class Portofolio:
     def get_all_positions_df(self) -> pd.DataFrame:
         """
         Retrieves all open positions for the logged-in user and returns them as a Pandas DataFrame.
+        If no positions are found, it prints a message to the console and returns an
+        empty DataFrame.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing all position data, or an empty DataFrame.
         """
         query = "SELECT * FROM positions WHERE user_id = :user_id;"
         params = {"user_id": self.user_id}
@@ -612,6 +635,21 @@ class Portofolio:
         return local_df
     
     def show_db_api_calls(self):
+        """
+        Displays the total number of database and API calls and resets the counters.
+
+        This function prints the cumulative count of database and API calls made
+        during the current session (since the last reset). After displaying the
+        counts, it resets both counters to zero, allowing for fresh tracking of
+        subsequent operations.
+
+        Args:
+            None
+
+        Returns:
+            None: Prints the call counts to the console.
+        """
         print(f"Total DB calls are '{self.db_calls}' and total API calls are '{self.api_calls}.")
+        # Reset the counters for database and API calls
         self.db_calls = 0
         self.api_calls = 0
