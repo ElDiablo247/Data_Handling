@@ -3,7 +3,6 @@ pf.execute_query("DROP TABLE IF EXISTS positions;")
 pf.execute_query("DROP TABLE IF EXISTS transactions;")
 pf.execute_query("DROP TABLE IF EXISTS users;")
 
-# Instance 1
 pf1 = Portofolio()
 pf1.register_user("JohnDoe1", "password1")
 pf1.log_in_user("JohnDoe1", "password1")

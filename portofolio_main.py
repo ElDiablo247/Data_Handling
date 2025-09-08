@@ -444,38 +444,40 @@ class Portofolio:
         Returns:
             None
         """
-        db_position_object = self.get_position_db(position_id) # Retrieve the position's details from the database (tuple)
+        # Retrieve the position's details from the database (tuple)
+        db_position_object = self.get_position_db(position_id) 
         db_pos_name = db_position_object[2]
+        db_pos_amount = float(db_position_object[3])
+        db_pos_open_price = float(db_position_object[4])
+        db_asset_share = float(db_position_object[5])
 
         # Re-use an existing function to make an API call and retrieve the asset's live data, then store only the asset's current price
         asset_data = self.get_asset_data(db_pos_name)
         asset_price_at_close = asset_data[0] 
 
-        db_pos_amount = float(db_position_object[3])
-        db_pos_open_price = float(db_position_object[4])
-        db_asset_share = float(db_position_object[5])
-        
-        local_profit_loss = round((asset_price_at_close - db_pos_open_price) * (db_asset_share), 2)
+        # Compute only the profit/loss, add the original invested amount and then increase account balance by the total
+        profit_loss = round((asset_price_at_close - db_pos_open_price) * (db_asset_share), 2)
+        return_amount = db_pos_amount + profit_loss
 
-        self.complete_transaction(db_position_object, asset_price_at_close, local_profit_loss)
-
-        self.delete_position_db(position_id) # Delete the position from the database
-
-        return_amount = db_pos_amount + local_profit_loss
-        self.modify_funds_db(return_amount) # Increase account balance by the amount returned from the transaction
+        # Use a single transaction for all database writes
+        with self.engine.begin() as connection:
+            # 1. Log the completed trade in the transactions history
+            self.complete_transaction(db_position_object, asset_price_at_close, profit_loss, connection=connection)
+            # 2. Delete the position from the active positions table
+            self.delete_position_db(position_id, connection=connection)
+            # 3. Update the user's account funds
+            self.modify_funds_db(return_amount, connection=connection)
         
     @requires_login
     def get_position_db(self, position_id: str) -> tuple:
         """
-        Retrieves all data for a single position from the database. Searches the 'positions' table for a specific position belonging to the
-        currently logged-in user, identified by its unique position ID.
+        Retrieves all data for a single position from the 'positions' table.
 
         Args:
             position_id (str): The unique identifier for the position.
 
         Returns:
-            tuple: A tuple containing all columns for the found position row.
-                   Raises a ValueError if no matching position is found.
+            tuple: A tuple containing all columns for the found position row, or raises a ValueError.
         """
         query = """
         SELECT position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector, open_datetime
@@ -490,21 +492,23 @@ class Portofolio:
         return result
 
     @requires_login
-    def complete_transaction(self, position_object: tuple, asset_price_at_close: float, profit_loss: float):
+    def complete_transaction(self, position_object: tuple, asset_price_at_close: float, profit_loss: float, connection=None):
         """
         Logs a completed trade into the transactions table.
 
-        This is a simple helper function that takes all the necessary,
-        pre-calculated data for a closed position and inserts it into the
-        `transactions` table to create a permanent historical record.
+        This helper function takes all the necessary data for a closed position
+        and inserts it into the `transactions` table to create a permanent
+        historical record. It can operate within a larger transaction.
 
         Args:
             position_object (tuple): The original position data from the database.
             asset_price_at_close (float): The asset's market price at the time of closing.
             profit_loss (float): The calculated profit or loss for the trade.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
 
         Returns:
-            None: Prints a confirmation message to the user with all the data that was entered in the transaction table.
+            None: Prints a confirmation message of the completed transaction.
         """
         db_pos_id = position_object[0]
         db_pos_name = position_object[2]
@@ -525,23 +529,25 @@ class Portofolio:
             'loss_profit': profit_loss,
             'open_datetime': db_pos_open_datetime
         }
-        self.execute_query(query, params)   
+        self.execute_query(query, params, connection=connection)   
 
         print(f"User -{self.user_name}-, completed a transaction with ID: {db_pos_id}, for asset {db_pos_name}, at the current price of {asset_price_at_close}$. The invested amount was {db_pos_amount}$ and the profit/loss is {profit_loss}$.")
     
-    def delete_position_db(self, position_id: str):
+    def delete_position_db(self, position_id: str, connection=None):
         """
         Deletes a single position from the active positions table.
 
-        This helper function executes the DELETE statement for a given position ID
-        and user ID. It uses the RETURNING clause to confirm that a row was
-        actually found and deleted, raising a ValueError if not.
+        This helper executes a DELETE statement for a given position ID and user
+        ID. It uses the RETURNING clause to confirm a row was deleted and can
+        operate within a larger transaction.
 
         Args:
             position_id (str): The unique identifier of the position to delete.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
 
         Returns:
-            None: Prints a confirmation message of the deletion to the user.
+            None: Prints a confirmation message of the deletion.
         """
         # Delete the position from the database
         query = """
@@ -550,19 +556,21 @@ class Portofolio:
         RETURNING position_id, position_name;
         """
         params = {"pos_id": position_id, "user_id": self.user_id}
-        result = self.execute_query(query, params, fetch="one") 
+        result = self.execute_query(query, params, fetch="one", connection=connection) 
 
         if not result: # If no rows were returned, raise an error
             raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
         print(f"Closed position with position ID: {position_id}")
 
-    """@requires_login
+    """
+    @requires_login
     def close_asset(self, asset_name: str):
         
         asset_current_data = self.get_asset_data(asset_name) # This 
         current_price = asset_current_data[0]
         asset_type = asset_current_data[1]
-        asset_sector = asset_current_data[2]"""
+        asset_sector = asset_current_data[2]
+    """
         
 
     @requires_login
