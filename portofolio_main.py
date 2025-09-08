@@ -88,7 +88,8 @@ class Portofolio:
             otherwise returns None.
         """
         self.db_calls += 1 # Increment db calls by one, each time a db call is made
-
+        # This helper contains the core execution and fetching logic. It runs the query
+        # on a given connection, whether it's new or part of an existing transaction.
         def _execute_and_fetch(conn):
             result = conn.execute(text(query), params or {})
             if fetch == 'all':
