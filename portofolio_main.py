@@ -425,48 +425,100 @@ class Portofolio:
         return round(shares, 8)
 
     @requires_login
-    def close_position(self, position_id: str):
+    def close_asset(self, position_id: str = None, asset_name: str = None):
         """
-        Orchestrates the closing of a single open position.
+        Orchestrates the closing of one or more positions in a single, atomic transaction.
 
-        This function acts as a high-level manager for the closing process. It
-        sequences the calls to various helper functions to:
-        1. Fetch the position's data from the database.
-        2. Get the current asset price from the API.
-        3. Calculate the profit or loss.
-        4. Log the completed trade in the transactions history.
-        5. Delete the position from the active positions table.
-        6. Update the user's account funds.
+        This function acts as a "smart manager" that determines what to close based
+        on the provided arguments. It handles fetching the necessary position data
+        and current asset price, then wraps all database modifications (logging
+        transactions, deleting positions, and updating funds) in one transaction
+        to ensure data integrity.
+
+        - To close a single position, provide the `position_id`.
+        - To close all positions for an asset, provide the `asset_name`.
 
         Args:
-            position_id (str): The unique identifier of the position to close.
+            position_id (str, optional): The unique ID of a single position to close.
+            asset_name (str, optional): The name of an asset to close all positions for.
 
         Returns:
-            None
+            None: Executes the closing process and prints confirmation messages.
         """
-        # Retrieve the position's details from the database (tuple)
-        db_position_object = self.get_position_db(position_id) 
-        db_pos_name = db_position_object[2]
-        db_pos_amount = float(db_position_object[3])
-        db_pos_open_price = float(db_position_object[4])
-        db_asset_share = float(db_position_object[5])
+        # Validate that the function is called correctly with exclusive arguments.
+        if not position_id and not asset_name:
+            raise ValueError("You must provide either a position_id or an asset_name.")
+        if position_id and asset_name:
+            raise ValueError("Provide either a position_id or an asset_name, not both.")
 
-        # Re-use an existing function to make an API call and retrieve the asset's live data, then store only the asset's current price
-        asset_data = self.get_asset_data(db_pos_name)
-        asset_price_at_close = asset_data[0] 
+        # Determine which positions to close based on the provided arguments.
+        positions_list = []
+        asset_current_data = None
+        if position_id:
+            # If a position_id is given, fetch that single position's data.
+            position = self.get_position_db(position_id)
+            position_name = position[2] # Get the asset name from the position data to look up the price.
+            asset_current_data = self.get_asset_data(position_name)
+            positions_list.append(position)
+        else:
+            # If an asset_name is given, fetch all positions matching that name for the user.
+            query = "SELECT * FROM positions WHERE user_id = :user_id AND position_name = :asset_name;"
+            params = {"user_id": self.user_id, "asset_name": asset_name}
+            results = self.execute_query(query, params, fetch="all")
+            if not results:
+                raise ValueError(f"No open positions found for asset '{asset_name}' for user '{self.user_name}'.")
+            positions_list = results
+            asset_current_data = self.get_asset_data(asset_name)
+        
+        # Fetch the current market price for the asset(s) being closed.
+        current_price = asset_current_data[0]
 
-        # Compute only the profit/loss, add the original invested amount and then increase account balance by the total
-        profit_loss = round((asset_price_at_close - db_pos_open_price) * (db_asset_share), 2)
-        return_amount = db_pos_amount + profit_loss
-
-        # Use a single transaction for all database writes
+        # Open a single transaction to ensure all operations succeed or fail together.
         with self.engine.begin() as connection:
-            # 1. Log the completed trade in the transactions history
-            self.complete_transaction(db_position_object, asset_price_at_close, profit_loss, connection=connection)
-            # 2. Delete the position from the active positions table
-            self.delete_position_db(position_id, connection=connection)
-            # 3. Update the user's account funds
-            self.modify_funds_db(return_amount, connection=connection)
+            # Call the worker function to process the positions and get the total return amount.
+            return_balance = self.close_position(positions_list, current_price, connection)
+            # Update the user's funds with the final calculated amount.
+            self.modify_funds_db(return_balance, connection)
+
+    @requires_login
+    def close_position(self, positions_list: list, current_price: float, connection=None) -> float:
+        """
+        Processes a list of positions to be closed within an existing transaction.
+
+        This function acts as an internal "worker" for the closing process. It
+        iterates through a list of positions and performs the following steps for each:
+        1. Calculate the profit or loss for each position.
+        2. Log the completed trade in the transactions history.
+        3. Delete the position from the active positions table.
+
+        Args:
+            positions_list (list): A list of position tuples to be closed.
+            current_price (float): The pre-fetched current price of the asset.
+            connection (sqlalchemy.engine.Connection): An active SQLAlchemy connection.
+
+        Returns:
+            float: The total amount to be returned to the user's funds from all closed positions.
+        """
+        # Initialize a variable to accumulate the total return from all positions.
+        return_amount = 0.0
+        # Iterate through each position provided in the list.
+        for db_position_object in positions_list:
+            # Extract position data for clarity.
+            db_pos_id = db_position_object[0]
+            db_pos_amount = float(db_position_object[3])
+            db_pos_cost = float(db_position_object[4])
+            db_asset_share = float(db_position_object[5])            
+            asset_price = current_price
+
+            # Calculate profit/loss and the total amount to be returned for this single position.
+            profit_loss = round((asset_price - db_pos_cost) * (db_asset_share), 2)
+            return_amount += db_pos_amount + profit_loss
+            
+            # Log the completed trade and delete the original position from the active table.
+            self.complete_transaction(db_position_object, asset_price, profit_loss, connection=connection)
+            self.delete_position_db(db_pos_id, connection=connection)
+        # Return the total accumulated amount to the calling function.
+        return return_amount
         
     @requires_login
     def get_position_db(self, position_id: str) -> tuple:
@@ -533,6 +585,7 @@ class Portofolio:
 
         print(f"User -{self.user_name}-, completed a transaction with ID: {db_pos_id}, for asset {db_pos_name}, at the current price of {asset_price_at_close}$. The invested amount was {db_pos_amount}$ and the profit/loss is {profit_loss}$.")
     
+    @requires_login
     def delete_position_db(self, position_id: str, connection=None):
         """
         Deletes a single position from the active positions table.
@@ -549,7 +602,7 @@ class Portofolio:
         Returns:
             None: Prints a confirmation message of the deletion.
         """
-        # Delete the position from the database
+        # Delete the position from the database query, and store the result in a variable
         query = """
         DELETE FROM positions
         WHERE position_id = :pos_id AND user_id = :user_id
@@ -558,21 +611,11 @@ class Portofolio:
         params = {"pos_id": position_id, "user_id": self.user_id}
         result = self.execute_query(query, params, fetch="one", connection=connection) 
 
-        if not result: # If no rows were returned, raise an error
+        # If no rows were returned, raise an error, else print confirmation message!
+        if not result:
             raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
         print(f"Closed position with position ID: {position_id}")
-
-    """
-    @requires_login
-    def close_asset(self, asset_name: str):
         
-        asset_current_data = self.get_asset_data(asset_name) # This 
-        current_price = asset_current_data[0]
-        asset_type = asset_current_data[1]
-        asset_sector = asset_current_data[2]
-    """
-        
-
     @requires_login
     def get_asset_data(self, asset_name: str) -> list:
         """
@@ -589,24 +632,28 @@ class Portofolio:
         Returns:
             list: A list containing the [price, asset_type, sector].
         """
+        # Initialize the yfinance Ticker object and increment the API call counter.
         ticker = yf.Ticker(asset_name)
         self.api_calls += 1 
 
+        # Validate that the ticker object contains information and extract it.
         if not ticker.info:
             raise ValueError(f"Asset '{asset_name}' not found or no data available.")
         asset_info = ticker.info
         market_state = asset_info.get("marketState", None)
         asset_price = None
         
+        # Determine the asset price based on the current market state and validate it.
         if market_state in ["CLOSED", "PRE", "POST", "POSTPOST"]:
-            asset_price = asset_info.get('previousClose', 0.0)
+            asset_price = asset_info.get('previousClose', 0.0) # Use the previous closing price if the market is not open.
         elif market_state == "REGULAR":
-            asset_price = asset_info.get('regularMarketPrice', 0.0)
+            asset_price = asset_info.get('regularMarketPrice', 0.0) # Use the regular market price for an open market.
         else:
             raise ValueError(f"Current market state is -{market_state}- and this Market state is not recognized or unsupported.")  
         if not asset_price or asset_price <= 0.0:
             raise ValueError(f"Current price for '{asset_name}' is {asset_price} so either a negative number or doesn't exist. The process cannot continue.")
         
+        # Retrieve the asset's type and sector, then compile and return all data.
         asset_type = asset_info.get('quoteType', "N/A")
         sector = asset_info.get('sector', "N/A")
         asset_data = [asset_price, asset_type, sector]
@@ -625,9 +672,8 @@ class Portofolio:
         query = "SELECT * FROM positions WHERE user_id = :user_id;"
         params = {"user_id": self.user_id}
         
-        # 1. Get the result proxy object
-        result_proxy = self.execute_query(query, params, fetch='proxy')
-        
+        result_proxy = self.execute_query(query, params, fetch='proxy') # 1. Get the result proxy object
+
         # 2. Get keys and data from the proxy
         #    - .keys() gets the column names
         #    - .fetchall() gets all rows and exhausts the proxy
@@ -660,5 +706,5 @@ class Portofolio:
         """
         print(f"Total DB calls are '{self.db_calls}' and total API calls are '{self.api_calls}.")
         # Reset the counters for database and API calls
-        self.db_calls = 0
         self.api_calls = 0
+        self.db_calls = 0
