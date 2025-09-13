@@ -1,14 +1,21 @@
-import yfinance as yf
-import pandas as pd
-from datetime import datetime
+class Counter:
+    """
+    A simple class that holds a value and can be incremented or decremented.
+    This class contains only business logic and does not print anything.
+    """
+    def __init__(self):
+        self._count = 0
 
+    def get_count(self) -> int:
+        """Returns the current count."""
+        return self._count
 
-ticker_symbol = yf.Ticker("BTC-USD")
-data = ticker_symbol.info
-market_state = data.get('marketState')
-print(market_state)
+    def increment(self) -> int:
+        """Increments the count by 1 and returns the new value."""
+        self._count += 1
+        return self._count
 
-price = data.get('regularMarketPrice')
-
-print(price)
-
+    def decrement(self) -> int:
+        """Decrements the count by 1 and returns the new value."""
+        self._count -= 1
+        return self._count

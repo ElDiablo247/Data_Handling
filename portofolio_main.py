@@ -671,12 +671,8 @@ class Portofolio:
         """
         query = "SELECT * FROM positions WHERE user_id = :user_id;"
         params = {"user_id": self.user_id}
-        
-        result_proxy = self.execute_query(query, params, fetch='proxy') # 1. Get the result proxy object
+        result_proxy = self.execute_query(query, params, fetch='proxy') # Get the result proxy object
 
-        # 2. Get keys and data from the proxy
-        #    - .keys() gets the column names
-        #    - .fetchall() gets all rows and exhausts the proxy
         column_names = list(result_proxy.keys())
         results = result_proxy.fetchall()
 
