@@ -6,11 +6,28 @@ from functools import wraps
 import yfinance as yf
 import pandas as pd
 import datetime
+import os
+from dotenv import load_dotenv
 
 class Portofolio:
     def __init__(self):
-        # Initialize SQLAlchemy engine
-        self.engine = create_engine('postgresql+psycopg2://postgres:6987129457@localhost/assets_project_db_2')
+        # Load variables from .env file
+        load_dotenv()
+
+        # Read the variables
+        db_user = os.getenv('DB_USER')
+        db_password = os.getenv('DB_PASSWORD')
+        db_host = os.getenv('DB_HOST')
+        db_name = os.getenv('DB_NAME')
+
+        # Validate that all variables are present
+        if not all([db_user, db_password, db_host, db_name]):
+            raise ValueError("One or more required database environment variables are not set in your .env file.")
+
+        # Construct the connection string
+        connection_string = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}/{db_name}'
+        
+        self.engine = create_engine(connection_string)
         self.user_id = None
         self.user_name = None 
         self.signed_in = False
