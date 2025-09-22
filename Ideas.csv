@@ -1,1 +1,4 @@
 Create Cache for API calls to make them faster 
+Logging errors (avoid print statements for information, rather use python log library)
+Testing?
+GUI

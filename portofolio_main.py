@@ -104,10 +104,9 @@ class Portofolio:
             Any: When fetch is 'all' returns a list of rows; when 'one' returns a single row;
             otherwise returns None.
         """
-        self.db_calls += 1 # Increment db calls by one, each time a db call is made
-        # This helper contains the core execution and fetching logic. It runs the query
-        # on a given connection, whether it's new or part of an existing transaction.
-        def _execute_and_fetch(conn):
+        self.db_calls += 1 
+        
+        def _execute_and_fetch(conn): # Helper function to avoid code duplication
             result = conn.execute(text(query), params or {})
             if fetch == 'all':
                 return result.fetchall()
@@ -281,6 +280,7 @@ class Portofolio:
         self.signed_in = True
         print(f"Logged in as {self.user_name} (ID: {self.user_id})")
 
+    @requires_login
     def log_out_user(self):
         """
         Logs out the currently logged-in user by resetting user-related attributes.
@@ -295,8 +295,6 @@ class Portofolio:
         Returns:
             None: Resets the user's session data.
         """
-        if not self.signed_in:
-            raise PermissionError("You are not logged in.")
         self.user_id = None
         self.user_name = None
         self.signed_in = False
@@ -702,6 +700,7 @@ class Portofolio:
         local_df = pd.DataFrame(results, columns=column_names)
         return local_df
     
+    @requires_login
     def show_db_api_calls(self):
         """
         Displays the total number of database and API calls and resets the counters.
