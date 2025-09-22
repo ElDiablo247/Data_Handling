@@ -205,7 +205,7 @@ class Portofolio:
 
     def register_user(self, user_name: str, password: str):
         """
-        Registers a new user in the system.
+        Registers a new user in the system using username and password inputs.
         The function checks if the username already exists, hashes the password, 
         generates a unique user ID, and stores the new user's details in the database.
 

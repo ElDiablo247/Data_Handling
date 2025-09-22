@@ -2,3 +2,12 @@ Create Cache for API calls to make them faster
 Logging errors (avoid print statements for information, rather use python log library)
 Testing?
 GUI
+
+"""
+A Simple Rule of Thumb
+Ask yourself: "Who is this message for?"
+
+If it's for the person running the program to see as normal output, use print().
+If it's for you (the developer) to see in a log file to understand what the program was doing, use logging.
+So, you are correct that many print statements used for debugging should become logging calls, but the ones that are part of the user interface should remain as print(). They can and should be used together.
+"""

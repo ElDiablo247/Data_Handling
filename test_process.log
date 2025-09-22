@@ -1,0 +1,11 @@
+2025-09-22 20:33:14,078 - INFO - --- Starting the process --- 
+2025-09-22 20:33:14,078 - INFO - Creating a new user named 'test_user'.
+2025-09-22 20:33:14,078 - DEBUG - User object created: {'name': 'test_user', 'funds': 1000}
+2025-09-22 20:33:14,579 - INFO - Adding two positions for 'test_user'.
+2025-09-22 20:33:14,579 - DEBUG - Positions to be processed: [{'asset': 'AAPL', 'amount': 300}, {'asset': 'GOOG', 'amount': 0}]
+2025-09-22 20:33:15,080 - INFO - Now, processing the positions to calculate shares.
+2025-09-22 20:33:15,080 - DEBUG - Processing AAPL with amount 300 at price 150
+2025-09-22 20:33:15,080 - INFO - Successfully calculated shares for AAPL: 2.00
+2025-09-22 20:33:15,080 - DEBUG - Processing GOOG with amount 0 at price 150
+2025-09-22 20:33:15,080 - ERROR - Failed to process position for 'GOOG'. Reason: Investment amount cannot be zero or less.
+2025-09-22 20:33:15,080 - INFO - --- Process finished --- 
