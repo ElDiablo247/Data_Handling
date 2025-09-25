@@ -351,21 +351,6 @@ class Portofolio:
             print(f"Amount was 0 so balance was not changed.")
 
     @requires_login
-    def get_account_info(self):
-        """
-        Retrieves and displays the current account information for the logged-in user.
-        This includes the user ID, username, and the total funds available in the account.
-
-        Args:
-            None
-
-        Returns:
-            None: Prints the account information directly to the console.
-        """       
-        local_funds = self.get_funds_db()
-        print(f"User ID: {self.user_id}, User Name: {self.user_name}, Account Balance: {local_funds}")
-
-    @requires_login
     def open_position(self, asset_name: str, position_amount: float):
         """
         Orchestrates opening a new position for the logged-in user.
@@ -393,7 +378,7 @@ class Portofolio:
             raise ValueError(f"Insufficient funds to open {asset_name} worth {position_amount}$.")
         
         # Retrieve asset data using the function get_asset_data (which also does validity checks)
-        asset_data = self.get_asset_data(asset_name)
+        asset_data = self.get_asset_data_api(asset_name)
         local_position_id = self.id_generator("position")
         local_asset_price = asset_data[0]
         local_asset_share = self.calculate_asset_shares(local_asset_price, position_amount)
@@ -473,7 +458,7 @@ class Portofolio:
             # If a position_id is given, fetch that single position's data.
             position = self.get_position_db(position_id)
             position_name = position[2] # Get the asset name from the position data to look up the price.
-            asset_current_data = self.get_asset_data(position_name)
+            asset_current_data = self.get_asset_data_api(position_name)
             positions_list.append(position)
         else:
             # If an asset_name is given, fetch all positions matching that name for the user.
@@ -483,7 +468,7 @@ class Portofolio:
             if not results:
                 raise ValueError(f"No open positions found for asset '{asset_name}' for user '{self.user_name}'.")
             positions_list = results
-            asset_current_data = self.get_asset_data(asset_name)
+            asset_current_data = self.get_asset_data_api(asset_name)
         
         # Fetch the current market price for the asset(s) being closed.
         current_price = asset_current_data[0]
@@ -632,7 +617,7 @@ class Portofolio:
         print(f"Closed position with position ID: {position_id}")
         
     @requires_login
-    def get_asset_data(self, asset_name: str) -> list:
+    def get_asset_data_api(self, asset_name: str) -> list:
         """
         Retrieves live market data for a given financial asset.
 
@@ -675,7 +660,7 @@ class Portofolio:
         return asset_data 
     
     @requires_login
-    def get_all_positions_df(self) -> pd.DataFrame:
+    def get_portfolio_info(self) -> pd.DataFrame:
         """
         Retrieves all open positions for the logged-in user and returns them as a Pandas DataFrame.
         If no positions are found, it prints a message to the console and returns an
@@ -686,9 +671,9 @@ class Portofolio:
         """
         query = "SELECT * FROM positions WHERE user_id = :user_id;"
         params = {"user_id": self.user_id}
-        result_proxy = self.execute_query(query, params, fetch='proxy') # Get the result proxy object
+        result_proxy = self.execute_query(query, params, fetch='proxy') 
 
-        column_names = list(result_proxy.keys())
+        column_names = list(result_proxy.keys()) # Store the column names in a list
         results = result_proxy.fetchall()
 
         # 3. Now, check if the results list is empty
@@ -720,3 +705,4 @@ class Portofolio:
         # Reset the counters for database and API calls
         self.api_calls = 0
         self.db_calls = 0
+
