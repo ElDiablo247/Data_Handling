@@ -39,10 +39,10 @@ class Portofolio:
     def create_empty(self):
         """
         Creates the necessary database tables if they do not already exist.
-        This function sets up the 'users', 'positions', and 'transactions' tables
-        with the required columns and constraints. It also resets the session's
-        database and API call counters.
-        
+        This function sets up the 'users', 'positions', 'transactions', and 'user_history'
+        tables with the required columns and constraints. It also resets the
+        session's database and API call counters.
+
         Args:
             None
 
@@ -77,7 +77,23 @@ class Portofolio:
                 loss_profit NUMERIC(12,2) NOT NULL,
                 open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,
                 close_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );"""  
+            );""",
+            """CREATE TABLE IF NOT EXISTS user_history (
+                action_id SERIAL PRIMARY KEY,
+                position_id VARCHAR(50) NOT NULL,
+                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
+                position_name VARCHAR(50) NOT NULL,
+                position_amount NUMERIC(12,2) NOT NULL,
+                open_price NUMERIC(12,2),
+                close_price NUMERIC(12,2),
+                loss_profit NUMERIC(12,2),
+                asset_share NUMERIC(18,8),
+                asset_type VARCHAR(50) NOT NULL DEFAULT 'N/A',
+                sector VARCHAR(50) NOT NULL DEFAULT 'N/A',
+                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                close_datetime TIMESTAMP(0) WITHOUT TIME ZONE,
+                state VARCHAR(50) NOT NULL
+            );"""
         ]
         for query in queries:
             self.execute_query(query)
@@ -175,7 +191,7 @@ class Portofolio:
                 query = """
                 SELECT 1 FROM positions WHERE position_id = :id
                 UNION ALL
-                SELECT 1 FROM transactions WHERE transaction_id = :id
+                SELECT 1 FROM transactions WHERE transaction_id = :id; 
                 """
                 if not self.execute_query(query, {"id": local_id}, fetch="one"):
                     return local_id  # Returns the new ID only if it's unique, else the loop continues        
@@ -359,8 +375,9 @@ class Portofolio:
         1. Validates the input amount and user's available funds.
         2. Fetches live market data for the asset via an API call.
         3. Calculates the number of shares based on the current price.
-        4. Atomically inserts the new position to the 'positions' table and deducts the cost from the
-           user's funds in a single database transaction.
+        4. Atomically inserts the new position into the 'positions' table, logs the
+           event to the 'user_history' table, and deducts the cost from the user's
+           funds in a single database transaction.
 
         Args:
             asset_name (str): The name/ticker of the asset to buy (e.g., 'AAPL').
@@ -388,8 +405,9 @@ class Portofolio:
         with self.engine.begin() as connection:
             # Insert the new position into the database
             query = """
-            INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector) 
-            VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector);
+            INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector)
+            VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector)
+            RETURNING *;
             """
             params = {
                 'position_id': local_position_id,
@@ -401,9 +419,11 @@ class Portofolio:
                 'asset_type': local_asset_type,
                 'sector': local_asset_sector
             }
-            self.execute_query(query, params, connection=connection)
+            position_object = self.execute_query(query, params, fetch="one", connection=connection)
 
-            pos_amount = -float(position_amount) # Make the amount negative so that it gets deducted from user's account balance.     
+            pos_amount = -float(position_amount) # Make the amount negative to be deducted from funds
+            self.log_to_history('OPEN', position_object, connection=connection)
+
             self.modify_funds_db(pos_amount, connection=connection)
 
         print(f"Bought asset {asset_name} with position ID {local_position_id} at price {local_asset_price}$ and {local_asset_share} shares in sector {local_asset_sector}.")
@@ -489,7 +509,8 @@ class Portofolio:
         iterates through a list of positions and performs the following steps for each:
         1. Calculate the profit or loss for each position.
         2. Log the completed trade in the transactions history.
-        3. Delete the position from the active positions table.
+        3. Log the closure in the user history table.
+        4. Delete the position from the active positions table.
 
         Args:
             positions_list (list): A list of position tuples to be closed.
@@ -499,11 +520,11 @@ class Portofolio:
         Returns:
             float: The total amount to be returned to the user's funds from all closed positions.
         """
-        # Initialize a variable to accumulate the total return from all positions.
+        
         return_amount = 0.0
-        # Iterate through each position provided in the list.
-        for db_position_object in positions_list:
-            # Extract position data for clarity.
+
+        # Iterate through each position provided in the list and extract position data for clarity
+        for db_position_object in positions_list:  
             db_pos_id = db_position_object[0]
             db_pos_amount = float(db_position_object[3])
             db_pos_cost = float(db_position_object[4])
@@ -514,10 +535,11 @@ class Portofolio:
             profit_loss = round((asset_price - db_pos_cost) * (db_asset_share), 2)
             return_amount += db_pos_amount + profit_loss
             
-            # Log the completed trade and delete the original position from the active table.
+            # Log the completed trade in transactions and history tables, then delete it from the positions table.
             self.complete_transaction(db_position_object, asset_price, profit_loss, connection=connection)
+            self.log_to_history('CLOSED', db_position_object, connection=connection)
             self.delete_position_db(db_pos_id, connection=connection)
-        # Return the total accumulated amount to the calling function.
+        
         return return_amount
         
     @requires_login
@@ -562,7 +584,7 @@ class Portofolio:
         Returns:
             None: Prints a confirmation message of the completed transaction.
         """
-        db_pos_id = position_object[0]
+        transaction_id = position_object[0]  
         db_pos_name = position_object[2]
         db_pos_open_datetime = position_object[8]
         db_pos_amount, db_pos_open_price = map(float, (position_object[3], position_object[4]))
@@ -572,7 +594,7 @@ class Portofolio:
         VALUES (:transaction_id, :user_id, :position_name, :position_amount, :open_price, :close_price, :loss_profit, :open_datetime);
         """
         params = {
-            'transaction_id': db_pos_id,
+            'transaction_id': transaction_id,
             'user_id': self.user_id,
             'position_name': db_pos_name,
             'position_amount': db_pos_amount,
@@ -581,9 +603,9 @@ class Portofolio:
             'loss_profit': profit_loss,
             'open_datetime': db_pos_open_datetime
         }
-        self.execute_query(query, params, connection=connection)   
+        self.execute_query(query, params, connection=connection)
 
-        print(f"User -{self.user_name}-, completed a transaction with ID: {db_pos_id}, for asset {db_pos_name}, at the current price of {asset_price_at_close}$. The invested amount was {db_pos_amount}$ and the profit/loss is {profit_loss}$.")
+        print(f"User -{self.user_name}-, completed a transaction with ID: {transaction_id}, for asset {db_pos_name}, at the current price of {asset_price_at_close}$. The invested amount was {db_pos_amount}$ and the profit/loss is {profit_loss}$.")
     
     @requires_login
     def delete_position_db(self, position_id: str, connection=None):
@@ -615,6 +637,67 @@ class Portofolio:
         if not result:
             raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
         print(f"Closed position with position ID: {position_id}")
+
+    @requires_login
+    def log_to_history(self, state: str, position_object: tuple, connection=None):
+        """
+        Logs an entry to the 'user_history' table based on an event (OPEN or CLOSED).
+        
+        This function has two distinct behaviors based on the 'state':
+        - For an 'OPEN' event, it copies the newly created position's data directly
+          from the 'positions' table. Columns related to closing (e.g., close_price)
+          are left as NULL.
+        - For a 'CLOSED' event, it copies the completed trade's data from the
+          'transactions' table. It then supplements this with data that is not
+          present in the transactions record (asset_share, asset_type, sector)
+          by extracting it from the provided 'position_object', which holds the
+          original position's details.
+
+        This function uses an INSERT...SELECT statement to copy data from either
+        the 'positions' or 'transactions' table into the 'user_history' table,
+        populating a new row with a given state.
+
+        Args:
+            state (str): The state of the event, either 'OPEN' or 'CLOSED'.
+            position_object (tuple): The full data object for the position being logged.
+            connection (sqlalchemy.engine.Connection, optional): An existing database 
+                connection to use for the operation. Defaults to None.
+        """
+        position_id = position_object[0]
+
+        if state == 'OPEN':         
+            query = """
+            INSERT INTO user_history (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector, open_datetime, state, close_price, loss_profit, close_datetime)
+            SELECT position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector, open_datetime, :state, NULL, NULL, NULL
+            FROM positions WHERE position_id = :position_id;
+            """
+            params = {'state': state, 'position_id': position_id}
+        elif state == 'CLOSED':
+            asset_share = position_object[5]
+            asset_type = position_object[6]
+            sector = position_object[7]           
+            query = """
+            INSERT INTO user_history (position_id, user_id, position_name, position_amount, open_price, close_price, loss_profit, open_datetime, close_datetime, state, asset_share, asset_type, sector)
+            SELECT transaction_id, user_id, position_name, position_amount, open_price, close_price, loss_profit, open_datetime, close_datetime, :state, :asset_share, :asset_type, :sector
+            FROM transactions WHERE transaction_id = :pos_id;
+            """
+            params = {
+                'state': state, 
+                'pos_id': position_id,
+                'asset_share': asset_share,
+                'asset_type': asset_type,
+                'sector': sector
+            }
+        else:
+            raise ValueError("State for history log must be 'OPEN' or 'CLOSED'.")
+
+        result = self.execute_query(query, params, fetch='proxy', connection=connection)
+
+        if result.rowcount == 0:
+            # This is an important check. If nothing was inserted, it means the source record wasn't found.
+            raise RuntimeError(f"Failed to log to history: Source record with ID '{position_id}' not found for state '{state}'.")
+
+        print(f"Logged event '{state}' for ID '{position_id}' to history.")
         
     @requires_login
     def get_asset_data_api(self, asset_name: str) -> list:
@@ -660,28 +743,39 @@ class Portofolio:
         return asset_data 
     
     @requires_login
-    def get_portfolio_info(self) -> pd.DataFrame:
+    def get_portfolio_info(self, source: str) -> pd.DataFrame:
         """
-        Retrieves all open positions for the logged-in user and returns them as a Pandas DataFrame.
-        If no positions are found, it prints a message to the console and returns an
-        empty DataFrame.
+        Retrieves data for the logged-in user from a specified table and returns it as a Pandas DataFrame.
+        If no records are found, it prints a message and returns an empty DataFrame.
 
+        Args:
+            source (str, optional): The table to fetch data from. Valid options are
+                'positions', 'transactions', or 'user_history'
+        
         Returns:
-            pd.DataFrame: A DataFrame containing all position data, or an empty DataFrame.
+            pd.DataFrame: A DataFrame containing the requested data, or an empty DataFrame.
         """
-        query = "SELECT * FROM positions WHERE user_id = :user_id;"
+        
+        if source == 'positions':
+            table_name = 'positions'
+        elif source == 'transactions':
+            table_name = 'transactions'
+        elif source == 'history':
+            table_name = 'user_history'
+        else:
+            raise ValueError(f"Invalid source '{source}'. Please choose from 'positions', 'transactions', or 'history'.")
+
+        query = f"SELECT * FROM {table_name} WHERE user_id = :user_id;"
         params = {"user_id": self.user_id}
         result_proxy = self.execute_query(query, params, fetch='proxy') 
 
-        column_names = list(result_proxy.keys()) # Store the column names in a list
+        column_names = list(result_proxy.keys())
         results = result_proxy.fetchall()
 
-        # 3. Now, check if the results list is empty
         if not results:
-            print(f"No positions found for user '{self.user_name}'.")
+            print(f"No records found in '{table_name}' for user '{self.user_name}'.")
             return pd.DataFrame()
         
-        # 4. Create the DataFrame
         local_df = pd.DataFrame(results, columns=column_names)
         return local_df
     
@@ -705,4 +799,3 @@ class Portofolio:
         # Reset the counters for database and API calls
         self.api_calls = 0
         self.db_calls = 0
-
