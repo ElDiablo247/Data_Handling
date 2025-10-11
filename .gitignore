@@ -7,3 +7,7 @@
 # Ignore Python cache
 __pycache__/
 *.pyc
+
+# Ignore test and Ideas files
+test.py
+Ideas.csv
