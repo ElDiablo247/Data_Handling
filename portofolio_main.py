@@ -471,33 +471,26 @@ class Portofolio:
         if position_id and asset_name:
             raise ValueError("Provide either a position_id or an asset_name, not both.")
 
-        # Determine which positions to close based on the provided arguments.
         positions_list = []
-        asset_current_data = None
+        asset_current_price = None
+
         if position_id:
-            # If a position_id is given, fetch that single position's data.
-            position = self.get_position_db(position_id)
-            position_name = position[2] # Get the asset name from the position data to look up the price.
-            asset_current_data = self.get_asset_data_api(position_name)
+            position = self.get_position_db(position_id) # Store the position object in a variable
+            position_name = position[2] 
+            asset_current_price = self.get_asset_current_price(position_name)
             positions_list.append(position)
         else:
-            # If an asset_name is given, fetch all positions matching that name for the user.
             query = "SELECT * FROM positions WHERE user_id = :user_id AND position_name = :asset_name;"
             params = {"user_id": self.user_id, "asset_name": asset_name}
             results = self.execute_query(query, params, fetch="all")
             if not results:
                 raise ValueError(f"No open positions found for asset '{asset_name}' for user '{self.user_name}'.")
             positions_list = results
-            asset_current_data = self.get_asset_data_api(asset_name)
-        
-        # Fetch the current market price for the asset(s) being closed.
-        current_price = asset_current_data[0]
+            asset_current_price = self.get_asset_current_price(asset_name)
 
         # Open a single transaction to ensure all operations succeed or fail together.
         with self.engine.begin() as connection:
-            # Call the worker function to process the positions and get the total return amount.
-            return_balance = self.close_position(positions_list, current_price, connection)
-            # Update the user's funds with the final calculated amount.
+            return_balance = self.close_position(positions_list, asset_current_price, connection)
             self.modify_funds_db(return_balance, connection)
 
     @requires_login
@@ -741,6 +734,26 @@ class Portofolio:
         sector = asset_info.get('sector', "N/A")
         asset_data = [asset_price, asset_type, sector]
         return asset_data 
+    
+    def get_asset_current_price(self, asset_name: str) -> float:
+        """
+        Retrieves the current market price for a specified asset.
+
+        This function is a simple wrapper around `get_asset_data_api` to fetch
+        just the current price of an asset. It ensures that the user is logged
+        in before making the API call.
+
+        Args:
+            asset_name (str): The ticker symbol of the asset (e.g., 'AAPL').
+
+        Returns:
+            float: The current market price of the asset.
+        """
+        if not self.signed_in:
+            raise PermissionError("You must be logged in to perform this action.")
+        asset_data = self.get_asset_data_api(asset_name)
+        asset_price = asset_data[0]
+        return asset_price 
     
     @requires_login
     def get_portfolio_info(self, source: str) -> pd.DataFrame:
