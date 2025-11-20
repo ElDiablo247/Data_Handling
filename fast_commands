@@ -1,5 +1,5 @@
 
-pf = Portofolio()
+pf = System()
 pf.execute_query("DROP TABLE IF EXISTS positions;")
 pf.execute_query("DROP TABLE IF EXISTS transactions;")
 pf.execute_query("DROP TABLE IF EXISTS user_history;")
@@ -7,25 +7,25 @@ pf.execute_query("DROP TABLE IF EXISTS users;")
 
 
 # --- Setup User 1 ---
-pf1 = Portofolio()
+pf1 = System()
 pf1.register_user("JohnDoe1", "password1")
 pf1.log_in_user("JohnDoe1", "password1")
 pf1.modify_funds_db(5000)
 
 # --- Setup User 2 ---
-pf2 = Portofolio()
+pf2 = System()
 pf2.register_user("JohnDoe2", "password2")
 pf2.log_in_user("JohnDoe2", "password2")
 pf2.modify_funds_db(3200)
 
 # --- Setup User 3 ---
-pf3 = Portofolio()
+pf3 = System()
 pf3.register_user("JohnDoe3", "password3")
 pf3.log_in_user("JohnDoe3", "password3")
 pf3.modify_funds_db(3500)
 
 # --- Setup User 4 ---
-pf4 = Portofolio()
+pf4 = System()
 pf4.register_user("JohnDoe4", "password4")
 pf4.log_in_user("JohnDoe4", "password4")
 pf4.modify_funds_db(2800)

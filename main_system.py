@@ -9,7 +9,7 @@ import datetime
 import os
 from dotenv import load_dotenv
 
-class Portofolio:
+class System:
     def __init__(self):
         # Load variables from .env file
         load_dotenv()

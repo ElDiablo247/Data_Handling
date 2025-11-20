@@ -11,3 +11,66 @@ If it's for the person running the program to see as normal output, use print().
 If it's for you (the developer) to see in a log file to understand what the program was doing, use logging.
 So, you are correct that many print statements used for debugging should become logging calls, but the ones that are part of the user interface should remain as print(). They can and should be used together.
 """
+
+Of course. This is the perfect time to create a clear blueprint before writing any code. Based on our discussions and analyzing your current Portofolio class, here is a structured plan for how to refactor it into a real-world application architecture.
+
+You will need to create four new classes and significantly refactor your existing Portofolio class.
+
+Here is the breakdown of the new classes and where every function from your current Portofolio class should go.
+
+The New Classes You Will Create
+1. User (Entity)
+Purpose: A simple data object to represent a logged-in user. It's a "digital ID card."
+Contents: It will only have an __init__ method to store user_id and user_name. It has no other functions.
+2. Portfolio (Entity)
+Purpose: A data object to represent a single portfolio belonging to a user.
+Contents: It will have an __init__ method to store portfolio_id, portfolio_name, and the user_id of its owner. It will also hold a list of Position objects.
+3. Position (Entity)
+Purpose: A data object to represent a single asset holding within a portfolio.
+Contents: It will have an __init__ method to store data like position_id, asset_name, amount, open_price, etc.
+4. MarketDataService (Service)
+Purpose: To be the single point of contact for all external market data APIs (like yfinance). This isolates your application from the specific library you are using.
+Contents: It will handle fetching asset prices and information.
+The Refactored Classes (Your Managers)
+5. UserManager (Service)
+This class will be responsible for all user-related business logic. It will be created once in main_app.py and will require the database engine.
+
+The following functions from your current Portofolio class will move here:
+
+id_generator('user'): The part that generates user IDs. It should be a private method (_generate_user_id).
+insert_new_user_db: Becomes a private helper method (_insert_new_user_db).
+register_user: The main public method for creating a new user.
+log_in_user: The main public method for authenticating a user. It will now return a User entity object on success.
+6. PortfolioManager (Service) - This is the new name for your refactored Portofolio class
+This will be the most important service class, responsible for all portfolio and position management logic. It will also be created once in main_app.py and will require the database engine. Crucially, its methods will now require a user_id to be passed in, so it knows whose data to modify.
+
+The following functions from your current Portofolio class will move here:
+
+id_generator('position'): The part that generates position IDs (_generate_position_id).
+get_funds_db: Will now take user_id as an argument.
+modify_funds_db: Will now take user_id and amount as arguments.
+open_position: Will now take user_id, asset_name, and amount as arguments.
+calculate_asset_shares: Becomes a private helper method.
+close_asset: Will now take user_id and position_id/asset_name as arguments.
+close_position: Becomes a private helper method.
+get_position_db: Will now take user_id and position_id as arguments.
+complete_transaction: Becomes a private helper method.
+delete_position_db: Becomes a private helper method.
+log_to_history: Becomes a private helper method.
+get_portfolio_info: Will now take user_id and source as arguments.
+Where the Remaining Functions Go
+__init__ (from Portofolio): This logic is completely broken apart.
+
+The database engine creation moves to main_app.py.
+The user state (self.user_id, self.signed_in) is no longer stored in a service. The main_app.py controller will hold the current User object in a variable after a successful login.
+create_empty: This is a one-time setup task. It should be converted to a staticmethod and called once from main_app.py right after the engine is created. It doesn't belong to any specific manager's ongoing responsibilities.
+
+execute_query: This is a database helper. For now, a version of this will exist as a private method (_execute_query) inside both UserManager and PortfolioManager.
+
+get_asset_data_api and get_asset_current_price: These move into the new MarketDataService. The PortfolioManager will then call this service to get prices instead of calling yfinance directly.
+
+log_out_user: The logic for this moves entirely to the main_app.py controller. Logging out simply means the main loop in authenticated_menu breaks, and the program returns to the main login/register menu. The User and Portfolio objects in memory are simply discarded.
+
+requires_login (Decorator): This becomes obsolete and should be deleted. The new structure makes it unnecessary. The controller (main_app.py) will only call PortfolioManager methods after a user has successfully logged in, so the check is implicitly handled by the application's flow.
+
+This structure provides a clear and robust separation of concerns, setting you up perfectly for a scalable and maintainable application.
