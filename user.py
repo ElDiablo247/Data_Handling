@@ -16,10 +16,10 @@ class User:
         """
         self._real_name = name
         self._user_id = None
-        self._user_name = None
+        self._user_name = None 
 
 
-    def get_name(self) -> str:
+    def get_real_name(self) -> str:
         """
         Retrieves the user's full name.
 
