@@ -55,29 +55,16 @@ class UserManager:
         Returns:
             None: Updates the object's user-related attributes and prints login confirmation.
         """
-        if self.signed_in == True:
-            raise PermissionError("You are already logged in. To log in with another account, please log out first.")
-        local_user_name = user_name.lower()
-        query = """
-        SELECT user_id, user_name, password
-        FROM users
-        WHERE user_name = :u
-        """
-        params = {"u": local_user_name}
-        result = self.execute_query(query, params, fetch="one")
-
-        if not result:
-            raise ValueError(f"The username '{local_user_name}' was not found.") 
+        user_row = self.data_manager.retrieve_user_by_username(user_name)
+        if not user_row:
+            raise ValueError(f"The username '{user_name}' was not found.") 
             
-        stored_user_id, stored_user_name, stored_hash = result
+        stored_hash_password = user_row.hash_password
 
-        if not bcrypt.checkpw(password.encode(), stored_hash.encode()):
+        if not bcrypt.checkpw(password.encode(), stored_hash_password.encode()):
             raise ValueError("Incorrect password.")
-
-        self.user_id = stored_user_id
-        self.user_name = stored_user_name
-        self.signed_in = True
-        print(f"Logged in as {self.user_name} (ID: {self.user_id})")
+        return User(user_id=user_row.user_id, user_name=user_row.user_name, funds=user_row.funds)
+        
 
     def log_out_user(self):
         """

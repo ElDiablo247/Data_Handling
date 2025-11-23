@@ -31,29 +31,10 @@ class UserInterface:
 
     def log_in_user(self, user_name: str, password: str):
         
-        if self.signed_in == True:
+        if self.user != None:
             raise PermissionError("You are already logged in. To log in with another account, please log out first.")
-        local_user_name = user_name.lower()
-        query = """
-        SELECT user_id, user_name, password
-        FROM users
-        WHERE user_name = :u
-        """
-        params = {"u": local_user_name}
-        result = self.execute_query(query, params, fetch="one")
-
-        if not result:
-            raise ValueError(f"The username '{local_user_name}' was not found.") 
-            
-        stored_user_id, stored_user_name, stored_hash = result
-
-        if not bcrypt.checkpw(password.encode(), stored_hash.encode()):
-            raise ValueError("Incorrect password.")
-
-        self.user_id = stored_user_id
-        self.user_name = stored_user_name
-        self.signed_in = True
-        print(f"Logged in as {self.user_name} (ID: {self.user_id})")
+        logged_in_user = self.user_manager.log_in_user(user_name, password)
+        self.user = logged_in_user
 
     @requires_login
     def log_out_user(self):

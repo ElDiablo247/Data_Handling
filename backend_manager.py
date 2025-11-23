@@ -44,7 +44,7 @@ class BackendManager:
             """CREATE TABLE IF NOT EXISTS users (
                 user_id VARCHAR(50) NOT NULL PRIMARY KEY,
                 user_name VARCHAR(50) NOT NULL UNIQUE,
-                password VARCHAR(80) NOT NULL,
+                hash_password VARCHAR(80) NOT NULL,
                 funds NUMERIC(12,2) NOT NULL DEFAULT 0
             );""",
             """CREATE TABLE IF NOT EXISTS positions (
@@ -159,7 +159,7 @@ class BackendManager:
         result = self.execute_query(query, params, fetch="one", connection=connection)
         return result
     
-    def insert_user_db(self, user_id: str, user_name: str, password: str, connection=None):
+    def insert_user_db(self, user_id: str, user_name: str, hash_password: str, connection=None):
         """
         Inserts a new user record into the 'users' table.
 
@@ -171,8 +171,29 @@ class BackendManager:
                 connection to use for the operation. Defaults to None.
         """
         query = """
-        INSERT INTO users (user_id, user_name, password) 
+        INSERT INTO users (user_id, user_name, hash_password) 
         VALUES (:user_id, :user_name, :password);
         """
-        params = {'user_id': user_id, 'user_name': user_name, 'password': password}
+        params = {'user_id': user_id, 'user_name': user_name, 'hash_password': hash_password}
         self.execute_query(query, params, connection=connection)
+
+    def retrieve_user_by_username(self, username: str, connection=None):
+        """
+        Retrieves a user record from the 'users' table by username.
+
+        Args:
+            username (str): The username of the user to retrieve.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
+
+        Returns:
+            A Row object containing the user record, or None if not found.
+        """
+        query = """
+        SELECT user_id, user_name, hash_password, funds
+        FROM users
+        WHERE user_name = :username;
+        """
+        params = {"username": username}
+        result = self.execute_query(query, params, fetch="one", connection=connection)
+        return result

@@ -7,29 +7,19 @@ class User:
     like the user's name and unique ID for the duration of a session.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, user_id: str, user_name: str, funds: float):
         """
-        Initializes a new User instance.
+        Initializes a new User instance with the user's core data.
 
         Args:
-            name (str): The user's real name.
+            user_id (str): The user's unique identifier.
+            user_name (str): The user's login username.
+            funds (float): The user's current available funds.
         """
-        self._real_name = name
-        self._user_id = None
-        self._user_name = None 
+        self._user_id = user_id
+        self._user_name = user_name
+        self._user_funds = funds
 
-
-    def get_real_name(self) -> str:
-        """
-        Retrieves the user's full name.
-
-        Args:
-            None
-
-        Returns:
-            str: The full name of the user.
-        """
-        return self._real_name
 
     def get_user_id(self) -> str:
         """
@@ -54,21 +44,15 @@ class User:
             str: The login username of the user.
         """
         return self._user_name
-
-    def set_user_id(self, value: str):
+    
+    def get_user_funds(self) -> float:
         """
-        Sets or updates the user's unique ID.
-
-        Args:
-            value (str): The new unique ID to assign to the user.
-        """
-        self._user_id = value
-
-    def set_user_name(self, value: str):
-        """
-        Sets or updates the user's login username.
+        Retrieves the user's current funds.
 
         Args:
-            value (str): The new login username to assign to the user.
+            None
+
+        Returns:
+            float: The amount of funds the user has.
         """
-        self._user_name = value
+        return self._user_funds
