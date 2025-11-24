@@ -1,11 +1,4 @@
 class User:
-    """
-    Represents a user entity within the application.
-
-    This class acts as a simple data container for user-related information.
-    It is typically created upon successful login and holds identity data
-    like the user's name and unique ID for the duration of a session.
-    """
 
     def __init__(self, user_id: str, user_name: str, funds: float):
         """

@@ -6,7 +6,6 @@ class BackendManager:
 
     def __init__(self):
         """Initializes the BackendManager with no backend set."""
-        self._backend = None
         # Load variables from .env file
         load_dotenv()
 
@@ -166,13 +165,13 @@ class BackendManager:
         Args:
             user_id (str): The unique ID for the new user.
             user_name (str): The username for the new account.
-            password (str): The securely hashed password for the user.
+            hash_password (str): The securely hashed password for the user.
             connection (sqlalchemy.engine.Connection, optional): An existing database
                 connection to use for the operation. Defaults to None.
         """
         query = """
         INSERT INTO users (user_id, user_name, hash_password) 
-        VALUES (:user_id, :user_name, :password);
+        VALUES (:user_id, :user_name, :hash_password);
         """
         params = {'user_id': user_id, 'user_name': user_name, 'hash_password': hash_password}
         self.execute_query(query, params, connection=connection)

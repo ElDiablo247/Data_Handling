@@ -11,312 +11,8 @@ from dotenv import load_dotenv
 
 class System:
     def __init__(self):
-        # Load variables from .env file
-        load_dotenv()
-
-        # Read the variables
-        db_user = os.getenv('DB_USER')
-        db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')
-        db_name = os.getenv('DB_NAME')
-
-        # Validate that all variables are present
-        if not all([db_user, db_password, db_host, db_name]):
-            raise ValueError("One or more required database environment variables are not set in your .env file.")
-
-        # Construct the connection string
-        connection_string = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}/{db_name}'
         
-        self.engine = create_engine(connection_string)
-        self.user_id = None
-        self.user_name = None 
-        self.signed_in = False
-        self.db_calls = 0
-        self.api_calls = 0
-        self.create_empty()
-        
-        
-    def create_empty(self):
-        """
-        Creates the necessary database tables if they do not already exist.
-        This function sets up the 'users', 'positions', 'transactions', and 'user_history'
-        tables with the required columns and constraints. It also resets the
-        session's database and API call counters.
-
-        Args:
-            None
-
-        Returns:
-            None: Executes SQL CREATE TABLE statements in the connected database.
-        """
-        queries = [
-            """CREATE TABLE IF NOT EXISTS users (
-                user_id VARCHAR(50) NOT NULL PRIMARY KEY,
-                user_name VARCHAR(50) NOT NULL UNIQUE,
-                password VARCHAR(80) NOT NULL,
-                funds NUMERIC(12,2) NOT NULL DEFAULT 0
-            );""",
-            """CREATE TABLE IF NOT EXISTS positions (
-                position_id VARCHAR(50) PRIMARY KEY,
-                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
-                position_name VARCHAR(50) NOT NULL,
-                position_amount NUMERIC(12,2) NOT NULL,
-                open_price NUMERIC(12,2) NOT NULL DEFAULT 0,
-                asset_share NUMERIC(18,8) NOT NULL DEFAULT 0,
-                asset_type VARCHAR(50) NOT NULL DEFAULT 'N/A',
-                sector VARCHAR(50) NOT NULL DEFAULT 'N/A',
-                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );""",
-            """CREATE TABLE IF NOT EXISTS transactions (
-                transaction_id VARCHAR(50) NOT NULL PRIMARY KEY,
-                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
-                position_name VARCHAR(50) NOT NULL,
-                position_amount NUMERIC(12,2) NOT NULL,
-                open_price NUMERIC(12,2) NOT NULL,
-                close_price NUMERIC(12,2) NOT NULL,
-                loss_profit NUMERIC(12,2) NOT NULL,
-                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,
-                close_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );""",
-            """CREATE TABLE IF NOT EXISTS user_history (
-                action_id SERIAL PRIMARY KEY,
-                position_id VARCHAR(50) NOT NULL,
-                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
-                position_name VARCHAR(50) NOT NULL,
-                position_amount NUMERIC(12,2) NOT NULL,
-                open_price NUMERIC(12,2),
-                close_price NUMERIC(12,2),
-                loss_profit NUMERIC(12,2),
-                asset_share NUMERIC(18,8),
-                asset_type VARCHAR(50) NOT NULL DEFAULT 'N/A',
-                sector VARCHAR(50) NOT NULL DEFAULT 'N/A',
-                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                close_datetime TIMESTAMP(0) WITHOUT TIME ZONE,
-                state VARCHAR(50) NOT NULL
-            );"""
-        ]
-        for query in queries:
-            self.execute_query(query)
-        self.db_calls = 0
-        self.api_calls = 0
-
-    def execute_query(self, query: str, params=None, fetch=None, connection=None):
-        """
-        Executes a single SQL query with optional parameters and optional result fetching.
-        The function uses bound parameters to avoid SQL injection and can return either
-        all rows, a single row, or nothing depending on the 'fetch' argument.
-
-        Args:
-            query (str): A valid SQL query string with named parameters (e.g., :name).
-            params (dict, optional): A mapping of parameter names to values. Defaults to {}.
-            fetch (str, optional): Set to 'all' to fetch all rows, 'one' to fetch a single row,
-                or leave as None to execute without fetching. Defaults to None.
-            connection (sqlalchemy.engine.Connection, optional): An existing database
-                connection. If provided, the query is executed within the context of this
-                connection's transaction. If None, a new transaction is created.
-                Defaults to None.
-
-        Returns:
-            Any: When fetch is 'all' returns a list of rows; when 'one' returns a single row;
-            otherwise returns None.
-        """
-        self.db_calls += 1 
-        
-        def _execute_and_fetch(conn): # Helper function to avoid code duplication
-            result = conn.execute(text(query), params or {})
-            if fetch == 'all':
-                return result.fetchall()
-            elif fetch == 'one':
-                return result.fetchone()
-            elif fetch == 'proxy':
-                return result
-            return None
-        
-        if connection:
-            return _execute_and_fetch(connection)
-        with self.engine.begin() as conn:
-            return _execute_and_fetch(conn)
-
-    def requires_login(func):
-        """
-        Decorator to ensure that a user is logged in before executing a method.
-        If the user is not logged in, a PermissionError is raised.
-        
-        Args:
-            func (callable): The function to be decorated.
-        
-        Returns:
-            wrapper: A wrapper function that checks login status before executing the original function.
-        """
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            if not self.signed_in:
-                raise PermissionError("You must be logged in to perform this action.")
-            return func(self, *args, **kwargs)
-        return wrapper
-
-    def id_generator(self, id_type: str) -> str:
-        """
-        Generates a unique, random ID for either a 'user' or a 'position' depending on the 'id_type' argument.
-
-        The function ensures that the generated ID does not already exist in the
-        relevant database tables before returning it (users or positions).
-        - For 'user', it generates a 5-character ID of 2 letters followed by 3 numbers (e.g., 'AB123') and checks for
-          uniqueness in the 'users' table.
-        - For 'position', it generates a 10-character alphanumeric ID and checks for
-          uniqueness across both the 'positions' and 'transactions' tables to
-          prevent collisions when a position is closed.
-
-        Args:
-            id_type (str): The type of ID to generate, either "user" or "position".
-
-        Returns:
-            str: A unique ID.
-        """
-        if id_type == "user":
-            while True:
-                # Generate a new user_id
-                letter_1 = random.choice(string.ascii_uppercase)
-                letter_2 = random.choice(string.ascii_uppercase)
-                numbers = f"{random.randint(0, 999):03d}"
-                generated_user_id = f"{letter_1}{letter_2}{numbers}"
-
-                query = "SELECT 1 FROM users WHERE user_id = :id"
-                if not self.execute_query(query, {"id": generated_user_id}, fetch="one"):
-                    return generated_user_id  # Return only if it's unique, else the loop continues
-        elif id_type == "position":
-            chars = string.ascii_uppercase + string.digits
-            while True:
-                local_id = ''.join(random.choices(chars, k=10))   
-                query = """
-                SELECT 1 FROM positions WHERE position_id = :id
-                UNION ALL
-                SELECT 1 FROM transactions WHERE transaction_id = :id; 
-                """
-                if not self.execute_query(query, {"id": local_id}, fetch="one"):
-                    return local_id  # Returns the new ID only if it's unique, else the loop continues        
             
-    def insert_new_user_db(self, user_id: str, user_name: str, password: str, account_funds: float):
-        """
-        Inserts a new user into the database.
-        This function adds a new record to the 'users' table with the provided user details,
-        including a unique user ID, username, hashed password, and initial account funds.
-
-        Args:
-            user_id (str): A unique identifier for the new user.
-            user_name (str): The username of the new account.
-            password (str): The hashed password to store securely in the database.
-            account_funds (float): The initial amount of funds for the account.
-
-        Returns:
-            None: Executes the SQL insert statement and prints a confirmation message.
-        """
-        query = """
-        INSERT INTO users (user_id, user_name, password, funds) 
-        VALUES (:user_id, :user_name, :password, :funds);
-        """
-        params = {'user_id': user_id, 'user_name': user_name, 'password': password, 'funds': account_funds}
-        self.execute_query(query, params)
-        print(f"New user '{user_name}' added to the database with ID: {user_id}")            
-
-    def register_user(self, user_name: str, password: str):
-        """
-        Registers a new user in the system using username and password inputs.
-        The function checks if the username already exists, hashes the password, 
-        generates a unique user ID, and stores the new user's details in the database.
-
-        Args:
-            user_name (str): The desired username for the new account.
-            password (str): The plain-text password to hash and store securely.
-
-        Raises:
-            PermissionError: If a user is already logged in.
-            ValueError: If the username already exists in the database.
-
-        Returns:
-            None: Adds the new user to the database or raises an error if the username is taken.
-        """
-        if self.signed_in == True:
-            raise PermissionError("You are already logged in. To register a new account, please log out first.")
-        local_username = user_name.lower()
-
-        query = """
-        SELECT 1
-        FROM users
-        WHERE user_name = :username
-        """ 
-        params = {"username": local_username}
-        result = self.execute_query(query, params, fetch="one") 
-
-        if result: # If result is found, it means the username already exists
-            raise ValueError(f"Username '{local_username}' already exists. Try another one.") 
-        
-        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() # Hash the password before storing
-        local_user_id = self.id_generator("user")  # Generate a unique user ID
-        local_funds = 0.0
-        self.insert_new_user_db(local_user_id, local_username, hashed_password, local_funds)
-
-    def log_in_user(self, user_name: str, password: str):
-        """
-        Authenticates a user by verifying their username and password.
-        If the credentials are correct, the user's ID and username are loaded into memory.
-
-        Args:
-            user_name (str): The username of the account to log in.
-            password (str): The plain-text password to verify against the stored hash.
-
-        Raises:
-            PermissionError: If a user is already logged in.
-            ValueError: If the username is not found or the password is incorrect.
-
-        Returns:
-            None: Updates the object's user-related attributes and prints login confirmation.
-        """
-        if self.signed_in == True:
-            raise PermissionError("You are already logged in. To log in with another account, please log out first.")
-        local_user_name = user_name.lower()
-        query = """
-        SELECT user_id, user_name, password
-        FROM users
-        WHERE user_name = :u
-        """
-        params = {"u": local_user_name}
-        result = self.execute_query(query, params, fetch="one")
-
-        if not result:
-            raise ValueError(f"The username '{local_user_name}' was not found.") 
-            
-        stored_user_id, stored_user_name, stored_hash = result
-
-        if not bcrypt.checkpw(password.encode(), stored_hash.encode()):
-            raise ValueError("Incorrect password.")
-
-        self.user_id = stored_user_id
-        self.user_name = stored_user_name
-        self.signed_in = True
-        print(f"Logged in as {self.user_name} (ID: {self.user_id})")
-
-    @requires_login
-    def log_out_user(self):
-        """
-        Logs out the currently logged-in user by resetting user-related attributes.
-        This function clears the user ID and username from the instance and sets
-        the login status to False.
-
-        Args:
-            None
-
-        Raises:
-            PermissionError: If no user is currently logged in.
-        Returns:
-            None: Resets the user's session data.
-        """
-        self.user_id = None
-        self.user_name = None
-        self.signed_in = False
-        print("Logged out successfully.")
-            
-    @requires_login
     def get_funds_db(self) -> float:
         """
         Function that gets the account balance from the database.
@@ -334,7 +30,6 @@ class System:
             raise ValueError("User id not found.")
         return float(result[0])
     
-    @requires_login
     def modify_funds_db(self, amount: float, connection=None):
         """
         Updates the logged-in user's funds in the database.
@@ -366,7 +61,6 @@ class System:
         else:
             print(f"Amount was 0 so balance was not changed.")
 
-    @requires_login
     def open_position(self, asset_name: str, position_amount: float):
         """
         Orchestrates opening a new position for the logged-in user.
@@ -428,7 +122,6 @@ class System:
 
         print(f"Bought asset {asset_name} with position ID {local_position_id} at price {local_asset_price}$ and {local_asset_share} shares in sector {local_asset_sector}.")
 
-    @requires_login
     def calculate_asset_shares(self, asset_price: float, asset_amount: float) -> float:
         """
         Function that calculates the number of shares that can be bought with a given amount of money at a specific asset price.
@@ -444,7 +137,6 @@ class System:
         shares = asset_amount / asset_price 
         return round(shares, 8)
 
-    @requires_login
     def close_asset(self, position_id: str = None, asset_name: str = None):
         """
         Orchestrates the closing of one or more positions in a single, atomic transaction.
@@ -493,7 +185,6 @@ class System:
             return_balance = self.close_position(positions_list, asset_current_price, connection)
             self.modify_funds_db(return_balance, connection)
 
-    @requires_login
     def close_position(self, positions_list: list, current_price: float, connection=None) -> float:
         """
         Processes a list of positions to be closed within an existing transaction.
@@ -535,7 +226,6 @@ class System:
         
         return return_amount
         
-    @requires_login
     def get_position_db(self, position_id: str) -> tuple:
         """
         Retrieves all data for a single position from the 'positions' table.
@@ -558,7 +248,6 @@ class System:
 
         return result
 
-    @requires_login
     def complete_transaction(self, position_object: tuple, asset_price_at_close: float, profit_loss: float, connection=None):
         """
         Logs a completed trade into the transactions table.
@@ -600,7 +289,6 @@ class System:
 
         print(f"User -{self.user_name}-, completed a transaction with ID: {transaction_id}, for asset {db_pos_name}, at the current price of {asset_price_at_close}$. The invested amount was {db_pos_amount}$ and the profit/loss is {profit_loss}$.")
     
-    @requires_login
     def delete_position_db(self, position_id: str, connection=None):
         """
         Deletes a single position from the active positions table.
@@ -631,7 +319,6 @@ class System:
             raise ValueError(f"No position found with ID '{position_id}' for user '{self.user_name}'.")
         print(f"Closed position with position ID: {position_id}")
 
-    @requires_login
     def log_to_history(self, state: str, position_object: tuple, connection=None):
         """
         Logs an entry to the 'user_history' table based on an event (OPEN or CLOSED).
@@ -692,7 +379,6 @@ class System:
 
         print(f"Logged event '{state}' for ID '{position_id}' to history.")
         
-    @requires_login
     def get_asset_data_api(self, asset_name: str) -> list:
         """
         Retrieves live market data for a given financial asset.
@@ -755,7 +441,6 @@ class System:
         asset_price = asset_data[0]
         return asset_price 
     
-    @requires_login
     def get_portfolio_info(self, source: str) -> pd.DataFrame:
         """
         Retrieves data for the logged-in user from a specified table and returns it as a Pandas DataFrame.
@@ -791,24 +476,3 @@ class System:
         
         local_df = pd.DataFrame(results, columns=column_names)
         return local_df
-    
-    @requires_login
-    def show_db_api_calls(self):
-        """
-        Displays the total number of database and API calls and resets the counters.
-
-        This function prints the cumulative count of database and API calls made
-        during the current session (since the last reset). After displaying the
-        counts, it resets both counters to zero, allowing for fresh tracking of
-        subsequent operations.
-
-        Args:
-            None
-
-        Returns:
-            None: Prints the call counts to the console.
-        """
-        print(f"Total DB calls are '{self.db_calls}' and total API calls are '{self.api_calls}.")
-        # Reset the counters for database and API calls
-        self.api_calls = 0
-        self.db_calls = 0
