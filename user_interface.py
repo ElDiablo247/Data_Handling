@@ -1,17 +1,20 @@
 from user_manager import UserManager
 from user import User
+from main_system import System
 
 class UserInterface:
 
-    def __init__(self, user_manager_instance: UserManager):
+    def __init__(self, user_manager: UserManager, system: System):
         """
-        Initializes the UserInterface with a dependency on a UserManager instance.
+        Initializes the UserInterface with dependencies on the required services.
 
         Args:
-            user_manager (UserManager): An instance of the UserManager for business logic.
+            user_manager (UserManager): The service for user-related logic.
+            system (System): The service for portfolio and trading logic.
         """
         self.user = None
-        self.user_manager = user_manager_instance
+        self.user_manager = user_manager
+        self.system = system
 
 
     def sign_up(self, user_name: str, password: str):

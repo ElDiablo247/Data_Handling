@@ -1,18 +1,12 @@
-from sqlalchemy import create_engine, text
-import random
-import string
-import bcrypt
-from functools import wraps
 import yfinance as yf
 import pandas as pd
-import datetime
-import os
-from dotenv import load_dotenv
+from backend_manager import BackendManager
 
 class System:
-    def __init__(self):
-        
-            
+    def __init__(self, backend_manager: BackendManager):
+        """Initializes the System with a dependency on the BackendManager."""
+        self.backend_manager = backend_manager
+
     def get_funds_db(self) -> float:
         """
         Function that gets the account balance from the database.

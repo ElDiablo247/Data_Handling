@@ -25,7 +25,7 @@ class UserManager:
         2. It checks if the desired username is already taken.
         3. It generates a guaranteed unique user ID.
         4. It securely hashes the user's password.
-        5. It inserts the new user record into the database.
+        5. It inserts the new user record into the database. 
 
         Args:
             username (str): The desired username for the new account.
