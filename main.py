@@ -8,7 +8,7 @@ from main_system import System
 backend_manager = BackendManager()
 
 # 2. Create service layer instances.
-#    Inject the shared backend_manager into them.
+# Inject the shared backend_manager into them.
 user_manager = UserManager(backend_manager)
 system = System(backend_manager)
 

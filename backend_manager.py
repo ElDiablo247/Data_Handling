@@ -20,8 +20,7 @@ class BackendManager:
             raise ValueError("One or more required database environment variables are not set in your .env file.")
 
         # Construct the connection string
-        connection_string = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}/{db_name}'
-        
+        connection_string = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}/{db_name}'  
         self.engine = create_engine(connection_string)
         self.create_empty()
 
@@ -195,4 +194,3 @@ class BackendManager:
         """
         params = {"username": username}
         result = self.execute_query(query, params, fetch="one", connection=connection)
-        return result
