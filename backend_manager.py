@@ -188,9 +188,10 @@ class BackendManager:
             A Row object containing the user record, or None if not found.
         """
         query = """
-        SELECT user_id, user_name, hash_password, funds
+        SELECT user_id, user_name, hash_password
         FROM users
         WHERE user_name = :username;
         """
         params = {"username": username}
         result = self.execute_query(query, params, fetch="one", connection=connection)
+        return result

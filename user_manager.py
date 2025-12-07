@@ -61,10 +61,10 @@ class UserManager:
         if not user_row:
             raise ValueError(f"The username '{user_name}' doesn't belong to any registered account") 
             
-        stored_hash_password = user_row.hash_password
+        stored_hash_password = user_row.hash_password # The stored hashed password from the database
         if not bcrypt.checkpw(password.encode(), stored_hash_password.encode()):
             raise ValueError("Incorrect password. Please try again")
-        return User(user_id=user_row.user_id, user_name=user_row.user_name, funds=user_row.funds)
+        return User(user_id=user_row.user_id, user_name=user_row.user_name)
 
     def generate_user_id(self, connection=None) -> str:
         """

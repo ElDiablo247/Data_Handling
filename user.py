@@ -11,7 +11,6 @@ class User:
         """
         self._user_id = user_id
         self._user_name = user_name
-        self._user_funds = funds
 
 
     def get_user_id(self) -> str:
@@ -38,14 +37,3 @@ class User:
         """
         return self._user_name
     
-    def get_user_funds(self) -> float:
-        """
-        Retrieves the user's current funds.
-
-        Args:
-            None
-
-        Returns:
-            float: The amount of funds the user has.
-        """
-        return self._user_funds
