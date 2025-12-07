@@ -1,28 +1,27 @@
 import yfinance as yf
 import pandas as pd
 from backend_manager import BackendManager
+from user import User
 
 class System:
     def __init__(self, backend_manager: BackendManager):
         """Initializes the System with a dependency on the BackendManager."""
         self.backend_manager = backend_manager
 
-    def get_funds_db(self) -> float:
+    def get_account_balance(self, user_id: str) -> float:
         """
-        Function that gets the account balance from the database.
+        Calls the BackendManager to get the account balance for a given user ID.
         
         Args:
-            None
+            user_id (str): The unique identifier of the user.
         
         Returns:
-            float: A float representing the current funds in the user's account.
+            float: A float representing the current account balance of the user with the given user ID.
         """
-        query = "SELECT funds FROM users WHERE user_id = :user_id"
-        params = {"user_id": self.user_id}
-        result = self.execute_query(query, params, fetch="one")
-        if not result:
-            raise ValueError("User id not found.")
-        return float(result[0])
+        local_account_balance = self.backend_manager.get_account_balance(user_id)
+        if not local_account_balance:
+            raise ValueError(f"No user with user ID '{user_id}' found.")
+        return float(local_account_balance[0])
     
     def modify_funds_db(self, amount: float, connection=None):
         """
@@ -55,7 +54,7 @@ class System:
         else:
             print(f"Amount was 0 so balance was not changed.")
 
-    def open_position(self, asset_name: str, position_amount: float):
+    def open_position(self, ticker_symbol: str, position_amount: float, user: User):
         """
         Orchestrates opening a new position for the logged-in user.
 
@@ -74,13 +73,13 @@ class System:
         Returns:
             None: On success, prints a confirmation message. Raises an error on failure.
         """
+        user_id = user.get_user_id()
+        
         # Checks for valid inputs
-        if position_amount < 10:
-            raise ValueError("Minimum amount to open a position is 10.")
-        if not isinstance(asset_name, str): 
-            raise TypeError("Asset name must be a string.")
-        if self.get_funds_db() < position_amount:
-            raise ValueError(f"Insufficient funds to open {asset_name} worth {position_amount}$.")
+        if not isinstance(ticker_symbol, str): 
+            raise TypeError("Ticker symbol must be a string.")
+        if self.get_account_balance(user_id) < position_amount:
+            raise ValueError(f"Insufficient funds for this operation. Increase your balance or reduce the position amount.")
         
         # Retrieve asset data using the function get_asset_data (which also does validity checks)
         asset_data = self.get_asset_data_api(asset_name)

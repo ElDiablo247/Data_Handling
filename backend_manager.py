@@ -43,7 +43,7 @@ class BackendManager:
                 user_id VARCHAR(50) NOT NULL PRIMARY KEY,
                 user_name VARCHAR(50) NOT NULL UNIQUE,
                 hash_password VARCHAR(80) NOT NULL,
-                funds NUMERIC(12,2) NOT NULL DEFAULT 0
+                account_balance NUMERIC(12,2) NOT NULL DEFAULT 0
             );""",
             """CREATE TABLE IF NOT EXISTS positions (
                 position_id VARCHAR(50) PRIMARY KEY,
@@ -194,4 +194,19 @@ class BackendManager:
         """
         params = {"username": username}
         result = self.execute_query(query, params, fetch="one", connection=connection)
+        return result
+    
+    def get_account_balance(self, user_id: str):
+        """
+        Function that gets the account balance from the database for the given user_id.
+        
+        Args:
+            user_id (str): The unique identifier of the user whose funds are to be retrieved.
+        
+        Returns:
+            A Row object containing the user's funds, or None if the user is not found.
+        """
+        query = "SELECT account_balance FROM users WHERE user_id = :user_id"
+        params = {"user_id": user_id}
+        result = self.execute_query(query, params, fetch="one")
         return result

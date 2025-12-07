@@ -77,3 +77,15 @@ class UserInterface:
             raise PermissionError("No user is currently logged in.")
         self.user = None
         print("Logged out successfully.")
+
+    def open_position(self, ticker_symbol: str, position_amount: float, user: User):
+        """
+        Opens a new trading position for the logged-in user by delegating
+        the operation to the System service.
+
+        Args:
+            ticker_symbol (str): The stock ticker symbol for the position.
+            position_amount (float): The monetary amount to invest in the position.
+            user (User): The currently logged-in user initiating the trade.
+        """
+        self.system.open_position(ticker_symbol, position_amount, user)
