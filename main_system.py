@@ -2,11 +2,14 @@ import yfinance as yf
 import pandas as pd
 from backend_manager import BackendManager
 from user import User
+from market_data import MarketData
+
 
 class System:
     def __init__(self, backend_manager: BackendManager):
         """Initializes the System with a dependency on the BackendManager."""
         self.backend_manager = backend_manager
+
 
     def get_account_balance(self, user_id: str) -> float:
         """
@@ -81,13 +84,14 @@ class System:
         if self.get_account_balance(user_id) < position_amount:
             raise ValueError(f"Insufficient funds for this operation. Increase your balance or reduce the position amount.")
         
-        # Retrieve asset data using the function get_asset_data (which also does validity checks)
-        asset_data = self.get_asset_data_api(asset_name)
+        # Retrieve ticker symbol data using a MarketData instance
+        market_data_instance = MarketData(ticker_symbol)
+        local_asset_price = market_data_instance.get_price()
+        local_asset_type = market_data_instance.get_asset_type()
+        local_asset_sector = market_data_instance.get_sector() 
+
         local_position_id = self.id_generator("position")
-        local_asset_price = asset_data[0]
         local_asset_share = self.calculate_asset_shares(local_asset_price, position_amount)
-        local_asset_type = asset_data[1]
-        local_asset_sector = asset_data[2]
 
         with self.engine.begin() as connection:
             # Insert the new position into the database
