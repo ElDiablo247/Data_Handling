@@ -1,5 +1,7 @@
 import yfinance as yf
 import pandas as pd
+import random
+import string
 from backend_manager import BackendManager
 from user import User
 from market_data import MarketData
@@ -26,55 +28,42 @@ class System:
             raise ValueError(f"No user with user ID '{user_id}' found.")
         return float(local_account_balance[0])
     
-    def modify_funds_db(self, amount: float, connection=None):
+    def top_up_account_balance(self, user: User, amount: float):
         """
-        Updates the logged-in user's funds in the database.
-        Can increase or decrease based on the amount if possitve or negative.
+        Tops up the account balance for the logged-in user by a specified amount.
+
+        This function validates the input amount to ensure it is a positive number.
+        It then delegates the database update operation to the BackendManager.
 
         Args:
-            amount (float): Positive or negative amount to change the balance by.
-            connection (sqlalchemy.engine.Connection, optional): An existing database
-                connection to use for the operation. Defaults to None.
+            user (User): The currently logged-in user object.
+            amount (float): The amount to add to the user's account balance.
 
-        Returns:
-            None: Only prints the change in funds and the new balance.
+        Raises:
+            ValueError: If the input amount is not a positive number.
         """
-        if amount != 0:
-            query = """
-            UPDATE users 
-            SET funds = funds + :delta 
-            WHERE user_id = :uid
-            RETURNING funds;
-            """
-            params = {"delta": amount, "uid": self.user_id}
-            result = self.execute_query(query, params, fetch="one", connection=connection)
+        if amount < 1:
+            raise ValueError("Top-up amount must be a minimum of 1.")
+        
+        user_id = user.get_user_id()
+        self.backend_manager.increase_user_balance(user_id, amount)
 
-            # Check if the result is None which indicates error somewhere.
-            if result is None:
-                raise RuntimeError("Failed to update account balance. User ID may not exist.")
-            new_balance = float(result[0])
-            print(f"Balance updated by {amount}$. New balance: ${new_balance}")
-        else:
-            print(f"Amount was 0 so balance was not changed.")
-
-    def open_position(self, ticker_symbol: str, position_amount: float, user: User):
+    def open_position(self, user: User, ticker_symbol: str, position_amount: float):
         """
         Orchestrates opening a new position for the logged-in user.
 
-        This function handles the entire process of opening a position:
+        This function handles the entire process of opening a position in a single atomic transaction:
         1. Validates the input amount and user's available funds.
         2. Fetches live market data for the asset via an API call.
         3. Calculates the number of shares based on the current price.
-        4. Atomically inserts the new position into the 'positions' table, logs the
-           event to the 'user_history' table, and deducts the cost from the user's
-           funds in a single database transaction.
+        4. Generates unique IDs for the position and the trade event.
+        5. Inserts records into the 'positions' and 'trades' tables.
+        6. Deducts the cost from the user's account balance.
 
         Args:
-            asset_name (str): The name/ticker of the asset to buy (e.g., 'AAPL').
+            user (User): The currently logged-in user object.
+            ticker_symbol (str): The ticker of the asset to buy (e.g., 'AAPL').
             position_amount (float): The amount of cash to invest in this position.
-
-        Returns:
-            None: On success, prints a confirmation message. Raises an error on failure.
         """
         user_id = user.get_user_id()
         
@@ -85,54 +74,94 @@ class System:
             raise ValueError(f"Insufficient funds for this operation. Increase your balance or reduce the position amount.")
         
         # Retrieve ticker symbol data using a MarketData instance
-        market_data_instance = MarketData(ticker_symbol)
-        local_asset_price = market_data_instance.get_price()
-        local_asset_type = market_data_instance.get_asset_type()
-        local_asset_sector = market_data_instance.get_sector() 
+        market_data = MarketData(ticker_symbol)
+        current_asset_price = market_data.get_price()
+        asset_type = market_data.get_asset_type()
+        asset_sector = market_data.get_sector() 
+        asset_share = round(position_amount / current_asset_price, 8)
 
-        local_position_id = self.id_generator("position")
-        local_asset_share = self.calculate_asset_shares(local_asset_price, position_amount)
-
-        with self.engine.begin() as connection:
-            # Insert the new position into the database
-            query = """
-            INSERT INTO positions (position_id, user_id, position_name, position_amount, open_price, asset_share, asset_type, sector)
-            VALUES (:position_id, :user_id, :position_name, :position_amount, :open_price, :asset_share, :asset_type, :sector)
-            RETURNING *;
-            """
-            params = {
-                'position_id': local_position_id,
-                'user_id': self.user_id,
-                'position_name': asset_name,
+        with self.backend_manager.engine.begin() as connection:
+            new_position_id = self.generate_position_id(connection=connection)
+            new_trade_id = self.generate_trade_id(connection=connection)
+        
+            # Assemble a dictionary with all the common data for the new position.
+            position_data = {
+                'position_id': new_position_id,
+                'user_id': user_id,
+                'position_ticker': ticker_symbol,
                 'position_amount': position_amount,
-                'open_price': local_asset_price,
-                'asset_share': local_asset_share,
-                'asset_type': local_asset_type,
-                'sector': local_asset_sector
+                'open_price': current_asset_price,
+                'asset_share': asset_share,
+                'asset_type': asset_type,
+                'sector': asset_sector
             }
-            position_object = self.execute_query(query, params, fetch="one", connection=connection)
 
-            pos_amount = -float(position_amount) # Make the amount negative to be deducted from funds
-            self.log_to_history('OPEN', position_object, connection=connection)
+            # Delegate database operations to the BackendManager.
+            self.backend_manager.insert_position(position_data, connection=connection)
+            self.backend_manager.insert_trade(new_trade_id, position_data, connection=connection)
+            self.backend_manager.decrease_user_balance(user_id, position_amount, connection=connection)
 
-            self.modify_funds_db(pos_amount, connection=connection)
-
-        print(f"Bought asset {asset_name} with position ID {local_position_id} at price {local_asset_price}$ and {local_asset_share} shares in sector {local_asset_sector}.")
-
-    def calculate_asset_shares(self, asset_price: float, asset_amount: float) -> float:
+    def generate_position_id(self, connection=None) -> str:
         """
-        Function that calculates the number of shares that can be bought with a given amount of money at a specific asset price.
-        For example, if the asset price is $150 and the user wants to invest $300, the function will return 2.0 shares.
+        Generates a unique, random ID for a new position.
+
+        This function repeatedly generates an 8-character ID and checks for its
+        uniqueness in the 'trades' table until a free ID is found. The 'trades'
+        table is used for the check as it is the master ledger of all position
+        IDs that have ever existed. This process is designed to run within a
+        larger transaction to prevent race conditions.
 
         Args:
-            asset_price (float): The current price of the asset.
-            asset_amount (float): The amount of money the investor wants to invest in the asset.
-        
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the uniqueness check. Defaults to None.
+
         Returns:
-            float: The number of shares that can be bought, rounded to 8 decimal places.
+            str: A guaranteed unique 8-character position ID.
         """
-        shares = asset_amount / asset_price 
-        return round(shares, 8)
+        while True:
+            # Generate parts according to format: Letter Letter Number Number Letter Number Number Number
+            letter_1 = random.choice(string.ascii_uppercase)
+            letter_2 = random.choice(string.ascii_uppercase)
+            two_digits = f"{random.randint(0, 99):02d}"  # Two digits (00-99)
+            letter_3 = random.choice(string.ascii_uppercase)
+            three_digits = f"{random.randint(0, 999):03d}" # Three digits (000-999)
+
+            combined_id = f"{letter_1}{letter_2}{two_digits}{letter_3}{three_digits}"
+
+            # Check if this position_id already exists
+            position_id_exists = self.backend_manager.position_id_exists(combined_id, connection=connection)
+            
+            if not position_id_exists:
+                return combined_id
+
+    def generate_trade_id(self, connection=None) -> str:
+        """
+        Generates a unique, random ID for a new trade event.
+
+        This function repeatedly generates a 12-character ID and checks for its
+        uniqueness in the 'trades' table until a free ID is found. This process
+        is designed to run within a larger transaction to prevent race conditions.
+
+        Args:
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the uniqueness check. Defaults to None.
+
+        Returns:
+            str: A guaranteed unique 12-character trade ID.
+        """
+        while True:
+            # Generate parts according to format: 4 digits, 2 letters, 3 digits, 3 letters
+            four_digits = f"{random.randint(0, 9999):04d}"
+            two_letters = "".join(random.choices(string.ascii_uppercase, k=2))
+            three_digits = f"{random.randint(0, 999):03d}"
+            three_letters = "".join(random.choices(string.ascii_uppercase, k=3))
+            combined_id = f"{four_digits}{two_letters}{three_digits}{three_letters}"
+            
+            # Check if this trade_id already exists
+            trade_id_exists = self.backend_manager.trade_id_exists(combined_id, connection=connection)   
+
+            if not trade_id_exists:
+                return combined_id
 
     def close_asset(self, position_id: str = None, asset_name: str = None):
         """
@@ -473,3 +502,34 @@ class System:
         
         local_df = pd.DataFrame(results, columns=column_names)
         return local_df
+
+    def modify_funds_db(self, amount: float, connection=None):
+        """
+        Updates the logged-in user's funds in the database.
+        Can increase or decrease based on the amount if possitve or negative.
+
+        Args:
+            amount (float): Positive or negative amount to change the balance by.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
+
+        Returns:
+            None: Only prints the change in funds and the new balance.
+        """
+        if amount != 0:
+            query = """
+            UPDATE users 
+            SET funds = funds + :delta 
+            WHERE user_id = :uid
+            RETURNING funds;
+            """
+            params = {"delta": amount, "uid": self.user_id}
+            result = self.execute_query(query, params, fetch="one", connection=connection)
+
+            # Check if the result is None which indicates error somewhere.
+            if result is None:
+                raise RuntimeError("Failed to update account balance. User ID may not exist.")
+            new_balance = float(result[0])
+            print(f"Balance updated by {amount}$. New balance: ${new_balance}")
+        else:
+            print(f"Amount was 0 so balance was not changed.")

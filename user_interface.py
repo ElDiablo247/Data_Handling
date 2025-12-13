@@ -78,7 +78,23 @@ class UserInterface:
         self.user = None
         print("Logged out successfully.")
 
-    def open_position(self, ticker_symbol: str, position_amount: float, user: User):
+    def top_up_account_balance(self, amount: float):
+        """
+        Handles a request to top up the logged-in user's account balance.
+
+        This function delegates the top-up operation to the System service and
+        prints a success or failure message to the user.
+
+        Args:
+            amount (float): The amount to add to the user's account balance.
+        """
+        try:
+            self.system.top_up_account_balance(self.user, amount)
+            print(f"Successfully topped up account balance by ${amount}.")
+        except ValueError as e:
+            print(e) # The UI catches the error and is responsible for the FAILURE notification
+
+    def open_position(self, ticker_symbol: str, position_amount: float):
         """
         Opens a new trading position for the logged-in user by delegating
         the operation to the System service.
@@ -86,6 +102,11 @@ class UserInterface:
         Args:
             ticker_symbol (str): The stock ticker symbol for the position.
             position_amount (float): The monetary amount to invest in the position.
-            user (User): The currently logged-in user initiating the trade.
         """
-        self.system.open_position(ticker_symbol, position_amount, user)
+        try:
+            self.system.open_position(self.user, ticker_symbol, position_amount)
+            print(f"Successfully opened position {ticker_symbol} with amount ${position_amount}.")
+        except ValueError as e:
+            print(e) # The UI catches the error and is responsible for the FAILURE notification
+
+    
