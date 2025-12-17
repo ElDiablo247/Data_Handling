@@ -17,3 +17,8 @@ system = System(backend_manager)
 ui = UserInterface(user_manager=user_manager, system=system)
 
 print("System is running... You can now use the 'ui' object.")
+
+ui.log_in_user("eldiablo", "12345")
+ui.open_position("AAPL", 320)
+ui.open_position("MSFT", 150)
+ui.log_out_user()

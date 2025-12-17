@@ -253,12 +253,12 @@ class BackendManager:
                 connection to use for the operation. Defaults to None.
         """
         query = """
-        INSERT INTO positions (position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector)
-        VALUES (:position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector);
+        INSERT INTO positions (position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, open_datetime)
+        VALUES (:position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :open_datetime);
         """
         self.execute_query(query, position_data, connection=connection)
 
-    def insert_trade(self, trade_id: str, trade_data: dict, connection=None):
+    def insert_buy_trade(self, trade_id: str, trade_data: dict, connection=None):
         """
         Inserts a new 'OPEN' trade record into the 'trades' table.
 
@@ -274,8 +274,8 @@ class BackendManager:
                 connection to use for the operation. Defaults to None.
         """
         query = """
-        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, state)
-        VALUES (:trade_id, :position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, 'OPEN');
+        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, open_datetime, state)
+        VALUES (:trade_id, :position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :open_datetime, 'BUY');
         """
         # Combine the main data dictionary with the specific trade_id
         params = {**trade_data, 'trade_id': trade_id}
