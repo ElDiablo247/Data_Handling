@@ -1,6 +1,8 @@
 from sqlalchemy import create_engine, text
 import os
 from dotenv import load_dotenv
+from position import Position
+
 
 class BackendManager:
 
@@ -238,7 +240,7 @@ class BackendManager:
         result = self.execute_query(query, params, fetch="one", connection=connection)
         return result
     
-    def insert_position(self, position_data: dict, connection=None):
+    def insert_position(self, position: Position, connection=None):
         """
         Inserts a new record into the 'positions' table.
 
@@ -252,13 +254,14 @@ class BackendManager:
             connection (sqlalchemy.engine.Connection, optional): An existing database
                 connection to use for the operation. Defaults to None.
         """
+        position_data_dict = position.to_position_dict()
         query = """
         INSERT INTO positions (position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, open_datetime)
         VALUES (:position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :open_datetime);
         """
-        self.execute_query(query, position_data, connection=connection)
+        self.execute_query(query, position_data_dict, connection=connection)
 
-    def insert_buy_trade(self, trade_id: str, trade_data: dict, connection=None):
+    def insert_buy_trade(self, trade_id: str, position: Position, connection=None):
         """
         Inserts a new 'OPEN' trade record into the 'trades' table.
 
@@ -273,12 +276,13 @@ class BackendManager:
             connection (sqlalchemy.engine.Connection, optional): An existing database
                 connection to use for the operation. Defaults to None.
         """
+        trade_data_dict = position.to_trade_dict()
         query = """
         INSERT INTO trades (trade_id, position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, open_datetime, state)
         VALUES (:trade_id, :position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :open_datetime, 'BUY');
         """
         # Combine the main data dictionary with the specific trade_id
-        params = {**trade_data, 'trade_id': trade_id}
+        params = {**trade_data_dict, 'trade_id': trade_id}
         self.execute_query(query, params, connection=connection)
 
     def increase_user_balance(self, user_id: str, amount: float, connection=None):

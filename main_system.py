@@ -5,6 +5,7 @@ import string
 from backend_manager import BackendManager
 from user import User
 from market_data import MarketData
+from position import Position
 
 
 class System:
@@ -78,29 +79,29 @@ class System:
         current_asset_price = market_data.get_price()
         asset_type = market_data.get_asset_type()
         asset_sector = market_data.get_sector() 
-        asset_share = round(position_amount / current_asset_price, 8)
         datetime_now = market_data.get_datetime()
+        position = Position()
 
         with self.backend_manager.engine.begin() as connection:
             new_position_id = self.generate_position_id(connection=connection)
             new_trade_id = self.generate_trade_id(connection=connection)
         
             # Assemble a dictionary with the acquired data for the new position.
-            position_data = {
-                'position_id': new_position_id,
-                'user_id': user_id,
-                'position_ticker': ticker_symbol,
-                'position_amount': position_amount,
-                'open_price': current_asset_price,
-                'asset_share': asset_share,
-                'asset_type': asset_type,
-                'sector': asset_sector,
-                'open_datetime': datetime_now
-            }
+            position.set_open_position_data(
+                position_id=new_position_id,
+                user_id=user_id,
+                trade_id=new_trade_id,
+                ticker=ticker_symbol,
+                amount=position_amount,
+                open_price=current_asset_price,
+                asset_type=asset_type,
+                sector=asset_sector,
+                open_datetime=datetime_now
+            )
 
             # Delegate database operations to the BackendManager.
-            self.backend_manager.insert_position(position_data, connection=connection)
-            self.backend_manager.insert_buy_trade(new_trade_id, position_data, connection=connection)
+            self.backend_manager.insert_position(position, connection=connection)
+            self.backend_manager.insert_buy_trade(new_trade_id, position, connection=connection)
             self.backend_manager.decrease_user_balance(user_id, position_amount, connection=connection)
 
     def generate_position_id(self, connection=None) -> str:
