@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine, text
 import os
+from decimal import Decimal
 from dotenv import load_dotenv
 from position import Position
 
@@ -285,7 +286,28 @@ class BackendManager:
         params = {**trade_data_dict, 'trade_id': trade_id}
         self.execute_query(query, params, connection=connection)
 
-    def increase_user_balance(self, user_id: str, amount: float, connection=None):
+    def insert_sell_trade(self, position: Position, connection=None):
+        """
+        Inserts a new 'SELL' trade record into the 'trades' table.
+
+        This function takes a populated Position object representing a closed trade
+        and inserts its data into the 'trades' table. This creates a permanent,
+        historical record of the sell event, including profit/loss.
+
+        Args:
+            position (Position): A Position object containing all data for the
+                closed trade, including closing price and profit/loss.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
+        """
+        trade_data_dict = position.to_trade_dict()
+        query = """
+        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, position_amount, open_price, close_price, loss_profit, asset_share, asset_type, sector, open_datetime, close_datetime, state)
+        VALUES (:trade_id, :position_id, :user_id, :position_ticker, :position_amount, :open_price, :close_price, :loss_profit, :asset_share, :asset_type, :sector, :open_datetime, :close_datetime, :state);
+        """
+        self.execute_query(query, trade_data_dict, connection=connection)
+
+    def increase_user_balance(self, user_id: str, amount: Decimal, connection=None):
         """
         Increases a user's account balance by a specified amount.
 
@@ -294,7 +316,7 @@ class BackendManager:
 
         Args:
             user_id (str): The ID of the user whose balance will be increased.
-            amount (float): The positive amount to add to the balance.
+            amount (Decimal): The positive amount to add to the balance.
             connection (sqlalchemy.engine.Connection, optional): An existing database
                 connection to use for the operation. Defaults to None.
         """
@@ -306,7 +328,7 @@ class BackendManager:
         params = {'user_id': user_id, 'amount': amount}
         self.execute_query(query, params, connection=connection)
         
-    def decrease_user_balance(self, user_id: str, amount: float, connection=None):
+    def decrease_user_balance(self, user_id: str, amount: Decimal, connection=None):
         """
         Decreases a user's account balance by a specified amount.
 
@@ -315,7 +337,7 @@ class BackendManager:
 
         Args:
             user_id (str): The ID of the user whose balance will be decreased.
-            amount (float): The positive amount to subtract from the balance.
+            amount (Decimal): The positive amount to subtract from the balance.
             connection (sqlalchemy.engine.Connection, optional): An existing database
                 connection to use for the operation. Defaults to None.
         """
@@ -326,3 +348,44 @@ class BackendManager:
         """
         params = {'user_id': user_id, 'amount': amount}
         self.execute_query(query, params, connection=connection)
+
+    def delete_position_db(self, user_id: str, position_id: str, connection=None):
+        """
+        Deletes a position from the 'positions' table for a given user and position ID,
+        returning the data of the deleted row.
+
+        Args:
+            user_id (str): The ID of the user who owns the position.
+            position_id (str): The ID of the position to delete.
+            connection (sqlalchemy.engine.Connection, optional): An existing database
+                connection to use for the operation. Defaults to None.
+
+        Returns:
+            A Row object containing the data of the deleted position.
+
+        Raises:
+            ValueError: If no matching position is found to delete.
+        """
+        query = """
+        DELETE FROM positions
+        WHERE position_id = :pos_id AND user_id = :user_id
+        RETURNING *;
+        """
+        params = {"pos_id": position_id, "user_id": user_id}
+        result = self.execute_query(query, params, fetch="one", connection=connection)
+        return result
+
+    def retrieve_user_positions(self, user_id: str, connection=None):
+        """
+        Retrieves all positions for a specific user from the 'positions' table.
+
+        Args:
+            user_id (str): The user ID to fetch positions for.
+            connection (sqlalchemy.engine.Connection, optional): An existing database connection.
+
+        Returns:
+            list: A list of Row objects representing the user's positions.
+        """
+        query = "SELECT * FROM positions WHERE user_id = :user_id"
+        params = {"user_id": user_id}
+        return self.execute_query(query, params, fetch="all", connection=connection)
