@@ -389,3 +389,17 @@ class BackendManager:
         query = "SELECT * FROM positions WHERE user_id = :user_id"
         params = {"user_id": user_id}
         return self.execute_query(query, params, fetch="all", connection=connection)
+    
+    def retrieve_user_trades(self, user_id: str, connection=None):
+        """
+        Retrieves all trade history for a specific user from the 'trades' table.
+
+        Args:
+            user_id (str): The user ID to fetch trade history for.
+            connection (sqlalchemy.engine.Connection, optional): An existing database connection.   
+        Returns:
+            list: A list of Row objects representing the user's trade history.
+        """
+        query = "SELECT * FROM trades WHERE user_id = :user_id"
+        params = {"user_id": user_id}
+        return self.execute_query(query, params, fetch="all", connection=connection)

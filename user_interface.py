@@ -19,7 +19,10 @@ class UserInterface:
         self.user_manager = user_manager
         self.system = system
         self.data_visualiser = DataVisualiser()
-
+        # Set Pandas display options for better readability in the console
+        pd.set_option('display.width', 1000)
+        pd.set_option('display.max_columns', None)
+        
 
     def sign_up(self, user_name: str, password: str):
         """
@@ -134,8 +137,10 @@ class UserInterface:
             if positions_table.empty:
                 print("\n[!] You have no open positions to close.")
                 return
+            print("")
             print("Your open positions:")
-            print(positions_table)
+            # Force left-alignment by converting to string, then set column spacing.
+            print(positions_table.astype(str).to_string(col_space=12))
 
             # 2. Determine the index to use
             index: int
@@ -157,6 +162,7 @@ class UserInterface:
 
             # 4. Execute the closing logic
             self.system.close_position(self.user, position_id)
+            print("")
             print(f"✅ Successfully closed position {position_id}.")
 
         except ValueError:
@@ -175,6 +181,20 @@ class UserInterface:
             raise PermissionError("You must be logged in to view your positions.")
         try:
             positions_table = self.data_visualiser.fetch_positions_dataframe(self.user)
-            print(positions_table)
+            # Force left-alignment by converting to string, then set column spacing.
+            print(positions_table.astype(str).to_string(col_space=12))
+        except ValueError as e:
+            print(e) # The UI catches the error and is responsible for the FAILURE notification
+
+    def show_user_trades(self):
+        """
+        Displays the trade history for the logged-in user using the DataVisualiser.
+        """
+        if self.user is None:
+            raise PermissionError("You must be logged in to view your trade history.")
+        try:
+            trades_table = self.data_visualiser.fetch_trades_dataframe(self.user)
+            # Force left-alignment by converting to string, then set column spacing.
+            print(trades_table.astype(str).to_string(col_space=12))
         except ValueError as e:
             print(e) # The UI catches the error and is responsible for the FAILURE notification
