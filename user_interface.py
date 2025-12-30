@@ -116,7 +116,7 @@ class UserInterface:
         except ValueError as e:
             print(e) # The UI catches the error and is responsible for the FAILURE notification
 
-    def close_position(self, index_to_close: int = None):
+    def close_position(self):
         """
         Closes a position, either interactively or by a pre-selected index.
 
@@ -130,41 +130,30 @@ class UserInterface:
         if self.user is None:
             print("[!] You must be logged in to close a position.")
             return
-
         try:
-            # 1. Fetch and display positions
+            # 1. Fetch and display the user's open positions
             positions_table = self.data_visualiser.fetch_positions_dataframe(self.user)
             if positions_table.empty:
                 print("\n[!] You have no open positions to close.")
                 return
             print("")
             print("Your open positions:")
-            # Force left-alignment by converting to string, then set column spacing.
-            print(positions_table.astype(str).to_string(col_space=12))
+            print(positions_table)
 
-            # 2. Determine the index to use
-            index: int
-            if index_to_close is None:
-                # Interactive mode: get input from user
-                user_input = input(f"\nEnter the index number (0-{len(positions_table) - 1}) to close: ")
-                index = int(user_input)
-            else:
-                # Scripting mode: use provided index
-                index = index_to_close
-                print(f"\nAttempting to non-interactively close position at index: {index}")
-
+            # 2. Request user input which is the index of the position to close
+            user_input = input(f"\nEnter the index number (0-{len(positions_table) - 1}) to close: ")
+            index = int(user_input)
+            
             # 3. Validate index and get position ID
             if not 0 <= index < len(positions_table):
                 print(f"[!] Error: Index {index} is out of range.")
                 return
-
             position_id = positions_table.iloc[index]['position_id']
 
             # 4. Execute the closing logic
             self.system.close_position(self.user, position_id)
             print("")
             print(f"✅ Successfully closed position {position_id}.")
-
         except ValueError:
             # Catches errors from int(user_input) if it's not a number
             print("[!] Error: Input must be a valid integer.")
@@ -181,8 +170,9 @@ class UserInterface:
             raise PermissionError("You must be logged in to view your positions.")
         try:
             positions_table = self.data_visualiser.fetch_positions_dataframe(self.user)
-            # Force left-alignment by converting to string, then set column spacing.
-            print(positions_table.astype(str).to_string(col_space=12))
+            print("")
+            print("Your open positions table:")
+            print(positions_table)
         except ValueError as e:
             print(e) # The UI catches the error and is responsible for the FAILURE notification
 
@@ -194,7 +184,8 @@ class UserInterface:
             raise PermissionError("You must be logged in to view your trade history.")
         try:
             trades_table = self.data_visualiser.fetch_trades_dataframe(self.user)
-            # Force left-alignment by converting to string, then set column spacing.
-            print(trades_table.astype(str).to_string(col_space=12))
+            print("")
+            print("Your trades table:")
+            print(trades_table)
         except ValueError as e:
             print(e) # The UI catches the error and is responsible for the FAILURE notification

@@ -97,7 +97,7 @@ class System:
                 open_price=current_asset_price,
                 asset_type=asset_type,
                 sector=asset_sector,
-                open_datetime=datetime_now
+                datetime=datetime_now
             )
 
             # Delegate database operations to the BackendManager.
@@ -190,7 +190,7 @@ class System:
         user_id = user.get_user_id()
 
         with self.backend_manager.engine.begin() as connection:
-            # 1. Generate a unique ID for this 'SELL' trade event within the transaction
+            # Generate a unique ID for this 'SELL' trade event within the transaction
             trade_id = self.generate_trade_id(connection=connection)
             
             closed_position_data = self.backend_manager.delete_position_db(user_id, position_id, connection=connection)
@@ -203,6 +203,6 @@ class System:
 
             self.backend_manager.insert_sell_trade(position, connection=connection)
 
-            # 6. Return the proceeds from the sale to the user's account balance
+            # Return the proceeds from the sale to the user's account balance
             closing_value = position.asset_share * position.close_price
             self.backend_manager.increase_user_balance(user_id, closing_value, connection=connection)

@@ -57,13 +57,14 @@ class BackendManager:
                 asset_share NUMERIC(18,8) NOT NULL DEFAULT 0,
                 asset_type VARCHAR(50) NOT NULL DEFAULT 'N/A',
                 sector VARCHAR(50) NOT NULL DEFAULT 'N/A',
-                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+                datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
             );""",
             """CREATE TABLE IF NOT EXISTS trades (
                 trade_id VARCHAR(50) NOT NULL PRIMARY KEY,
                 position_id VARCHAR(50) NOT NULL,
                 user_id VARCHAR(50) NOT NULL REFERENCES users(user_id),
                 position_ticker VARCHAR(50) NOT NULL,
+                state VARCHAR(50) NOT NULL,
                 position_amount NUMERIC(12,2) NOT NULL,
                 open_price NUMERIC(12,2),
                 close_price NUMERIC(12,2),
@@ -71,9 +72,7 @@ class BackendManager:
                 asset_share NUMERIC(18,8),
                 asset_type VARCHAR(50) NOT NULL DEFAULT 'N/A',
                 sector VARCHAR(50) NOT NULL DEFAULT 'N/A',
-                open_datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                close_datetime TIMESTAMP(0) WITHOUT TIME ZONE,
-                state VARCHAR(50) NOT NULL
+                datetime TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
             );""",
             """CREATE INDEX IF NOT EXISTS idx_trades_position_id ON trades (position_id);"""
         ]
@@ -257,17 +256,16 @@ class BackendManager:
         """
         position_data_dict = position.to_position_dict()
         query = """
-        INSERT INTO positions (position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, open_datetime)
-        VALUES (:position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :open_datetime);
+        INSERT INTO positions (position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, datetime)
+        VALUES (:position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :datetime);
         """
         self.execute_query(query, position_data_dict, connection=connection)
 
     def insert_buy_trade(self, trade_id: str, position: Position, connection=None):
         """
-        Inserts a new 'OPEN' trade record into the 'trades' table.
-
+        Inserts a new 'BUY' trade record into the 'trades' table.
         This function takes a dictionary of trade data and a unique trade ID,
-        then inserts a new record into the 'trades' table with a state of 'OPEN'.
+        then inserts a new record into the 'trades' table with a state of 'BUY'.
         This creates a permanent, historical record of the buy event.
 
         Args:
@@ -279,8 +277,8 @@ class BackendManager:
         """
         trade_data_dict = position.to_trade_dict()
         query = """
-        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, position_amount, open_price, asset_share, asset_type, sector, open_datetime, state)
-        VALUES (:trade_id, :position_id, :user_id, :position_ticker, :position_amount, :open_price, :asset_share, :asset_type, :sector, :open_datetime, 'BUY');
+        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, state, position_amount, open_price, asset_share, asset_type, sector, datetime)
+        VALUES (:trade_id, :position_id, :user_id, :position_ticker, 'BUY', :position_amount, :open_price, :asset_share, :asset_type, :sector, :datetime);it i
         """
         # Combine the main data dictionary with the specific trade_id
         params = {**trade_data_dict, 'trade_id': trade_id}
@@ -302,8 +300,8 @@ class BackendManager:
         """
         trade_data_dict = position.to_trade_dict()
         query = """
-        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, position_amount, open_price, close_price, loss_profit, asset_share, asset_type, sector, open_datetime, close_datetime, state)
-        VALUES (:trade_id, :position_id, :user_id, :position_ticker, :position_amount, :open_price, :close_price, :loss_profit, :asset_share, :asset_type, :sector, :open_datetime, :close_datetime, :state);
+        INSERT INTO trades (trade_id, position_id, user_id, position_ticker, state, position_amount, open_price, close_price, loss_profit, asset_share, asset_type, sector, datetime)
+        VALUES (:trade_id, :position_id, :user_id, :position_ticker, :state, :position_amount, :open_price, :close_price, :loss_profit, :asset_share, :asset_type, :sector, :datetime);
         """
         self.execute_query(query, trade_data_dict, connection=connection)
 

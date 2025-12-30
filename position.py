@@ -18,19 +18,16 @@ class Position:
         self.asset_share = None
         self.asset_type = None
         self.sector = None
-        self.open_datetime = None
-        self.close_datetime = None
+        self.datetime = None
         self.loss_profit = None
         self.state = None
 
     
-    def set_open_position_data(self, position_id: str, user_id: str, trade_id: str, ticker: str, amount: float, open_price: float, asset_type: str, sector: str, open_datetime):
+    def set_open_position_data(self, position_id: str, user_id: str, trade_id: str, ticker: str, amount: float, open_price: float, asset_type: str, sector: str, datetime):
         """
         Populates the position object with data for opening a new position.
         Calculates shares based on the provided price.
         
-        Returns:
-            dict: A dictionary ready for the backend to insert.
         """
         self.position_id = position_id
         self.user_id = user_id
@@ -40,13 +37,13 @@ class Position:
         self.open_price = Decimal(str(open_price))
         self.asset_type = asset_type
         self.sector = sector
-        self.open_datetime = open_datetime
+        self.datetime = datetime
         self.state = 'BUY'
 
         # Perform the math
         self.asset_share = self.amount / self.open_price
 
-    def set_close_position_data(self, closed_position_data, trade_id: str, close_price: float, close_datetime, state: str):
+    def set_close_position_data(self, closed_position_data, trade_id: str, close_price: float, datetime, state: str):
         """
         Populates the position object with data for closing an existing position.
         It takes the data from the deleted position row and combines it with
@@ -56,7 +53,7 @@ class Position:
             closed_position_data (Row): The SQLAlchemy Row object of the deleted position.
             trade_id (str): The new unique ID for the closing trade event.
             close_price (float): The market price of the asset at the time of closing.
-            close_datetime: The timestamp of when the position was closed.
+            datetime: The timestamp of the execution.
             state (str): The state of this trade record (e.g., 'SELL').
         """
         # Unpack data from the original open position
@@ -68,12 +65,11 @@ class Position:
         self.asset_share = closed_position_data.asset_share
         self.asset_type = closed_position_data.asset_type
         self.sector = closed_position_data.sector
-        self.open_datetime = closed_position_data.open_datetime
 
         # Add new data for the closing event
         self.trade_id = trade_id
         self.close_price = Decimal(str(close_price))
-        self.close_datetime = close_datetime
+        self.datetime = datetime
         self.state = state
 
         # Calculate profit/loss: (Value at Close) - (Value at Open)
@@ -92,7 +88,7 @@ class Position:
             'asset_share': self.asset_share,
             'asset_type': self.asset_type,
             'sector': self.sector,
-            'open_datetime': self.open_datetime
+            'datetime': self.datetime
         }
 
     def to_trade_dict(self) -> dict:
@@ -109,7 +105,6 @@ class Position:
             'asset_share': self.asset_share,
             'asset_type': self.asset_type,
             'sector': self.sector,
-            'open_datetime': self.open_datetime,
-            'close_datetime': self.close_datetime,
+            'datetime': self.datetime,
             'state': self.state
         }
